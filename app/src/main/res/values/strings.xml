@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">XVM Blitz</string>
+    <string name="overlay_notification_title">XVM Blitz</string>
+    <string name="overlay_notification_text">Кнопка статистики поверх игры</string>
+    <string name="capture_notification_title">XVM Blitz capture</string>
+    <string name="capture_notification_text">Захват экрана для OCR</string>
+    <string name="action_toggle_overlay">Показать/скрыть панели</string>
+    <string name="action_stop_overlay">Остановить</string>
+</resources>
