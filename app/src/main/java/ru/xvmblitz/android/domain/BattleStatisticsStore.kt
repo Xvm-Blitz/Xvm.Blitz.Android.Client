@@ -64,26 +64,108 @@ class BattleStatisticsStore {
     companion object {
         const val TABLE_SLOTS = 7
 
-        val previewAllies: List<PlayerSlot> = (0 until TABLE_SLOTS).map { tableNumber ->
+        val previewAllies: List<PlayerSlot> = listOf(
             PlayerSlot(
-                tableNumber = tableNumber,
+                tableNumber = 0,
                 isMissing = false,
-                nicknameWithClanTag = "Ally$tableNumber",
-                tank = "Танк",
-                numberOfBattles = 1200 + tableNumber * 100,
-                winRate = 45.0 + tableNumber * 4,
-            )
-        }
+                nicknameWithClanTag = "ИгрокСОченьДлиннымИменем",
+                tank = "Т-54 первый образец великолепный",
+                numberOfBattles = 0,
+                winRate = 52.45,
+            ),
+            PlayerSlot(
+                tableNumber = 1,
+                isMissing = false,
+                nicknameWithClanTag = "НизкийРейтинг",
+                tank = "КВ-1",
+                numberOfBattles = 999,
+                winRate = 45.23,
+            ),
+            PlayerSlot(
+                tableNumber = 2,
+                isMissing = false,
+                nicknameWithClanTag = "СреднийРейтинг",
+                tank = "T-34-85",
+                numberOfBattles = 1000,
+                winRate = 55.78,
+            ),
+            PlayerSlot(
+                tableNumber = 3,
+                isMissing = false,
+                nicknameWithClanTag = "ВысокийРейтинг",
+                tank = "ИС-7",
+                numberOfBattles = 1001,
+                winRate = 65.92,
+            ),
+            PlayerSlot(
+                tableNumber = 4,
+                isMissing = false,
+                nicknameWithClanTag = "СуперРейтинг",
+                tank = "Объект 140",
+                numberOfBattles = 7000,
+                winRate = 75.34,
+            ),
+            PlayerSlot(
+                tableNumber = 5,
+                isMissing = false,
+                nicknameWithClanTag = "СреднийРейтинг",
+                tank = "T62A",
+                numberOfBattles = 2134,
+                winRate = 58.45,
+            ),
+            PlayerSlot(
+                tableNumber = 6,
+                isMissing = false,
+                nicknameWithClanTag = "ИгрокБезТанка",
+                tank = "",
+                numberOfBattles = 2134,
+                winRate = 50.00,
+            ),
+        )
 
-        val previewEnemies: List<PlayerSlot> = (0 until TABLE_SLOTS).map { tableNumber ->
+        val previewEnemies: List<PlayerSlot> = listOf(
             PlayerSlot(
-                tableNumber = tableNumber,
+                tableNumber = 0,
                 isMissing = false,
-                nicknameWithClanTag = "Enemy$tableNumber",
-                tank = "Танк",
-                numberOfBattles = 800 + tableNumber * 150,
-                winRate = 42.0 + tableNumber * 5,
-            )
-        }
+                nicknameWithClanTag = "VeryLongEnemyName1234567",
+                tank = "Maus with long description",
+                numberOfBattles = 47000,
+                winRate = 51.23,
+            ),
+            PlayerSlot(
+                tableNumber = 1,
+                isMissing = false,
+                nicknameWithClanTag = "Enemy1",
+                tank = "Tiger II",
+                numberOfBattles = 42000,
+                winRate = 48.76,
+            ),
+            PlayerSlot(
+                tableNumber = 2,
+                isMissing = false,
+                nicknameWithClanTag = "Enemy2",
+                tank = "IS-4",
+                numberOfBattles = 17000,
+                winRate = 54.21,
+            ),
+            PlayerSlot(
+                tableNumber = 3,
+                isMissing = false,
+                nicknameWithClanTag = "Enemy3",
+                tank = "E-100",
+                numberOfBattles = 45668,
+                winRate = 62.45,
+            ),
+            PlayerSlot(
+                tableNumber = 4,
+                isMissing = false,
+                nicknameWithClanTag = "Enemy4",
+                tank = "Jagdpanzer E-100",
+                numberOfBattles = 15000,
+                winRate = 72.89,
+            ),
+            PlayerSlot(tableNumber = 5, isMissing = true),
+            PlayerSlot(tableNumber = 6, isMissing = true),
+        )
     }
 }

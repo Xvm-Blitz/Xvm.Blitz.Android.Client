@@ -68,6 +68,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var currentBattle = BattleUiState()
     private var hiddenForCapture = false
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
+    private val alliesMinScaleX = MutableStateFlow(OverlayMinScaleX)
+    private val enemiesMinScaleX = MutableStateFlow(OverlayMinScaleX)
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -200,11 +202,12 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             return
         }
         OverlayPanel(
-            title = if (settings.configMode && !battle.hasBattle) "Союзники (настройка)" else "Союзники",
             players = if (battle.hasBattle) battle.allies else BattleStatisticsStore.previewAllies,
             scaleX = previewScale?.scaleX ?: settings.panelScaleX,
             scaleY = previewScale?.scaleY ?: settings.panelScaleY,
             configMode = settings.configMode,
+            mirroredColumns = false,
+            onMinScaleXChange = { alliesMinScaleX.value = it },
         )
     }
 
@@ -218,11 +221,12 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             return
         }
         OverlayPanel(
-            title = if (settings.configMode && !battle.hasBattle) "Противники (настройка)" else "Противники",
             players = if (battle.hasBattle) battle.enemies else BattleStatisticsStore.previewEnemies,
             scaleX = previewScale?.scaleX ?: settings.panelScaleX,
             scaleY = previewScale?.scaleY ?: settings.panelScaleY,
             configMode = settings.configMode,
+            mirroredColumns = true,
+            onMinScaleXChange = { enemiesMinScaleX.value = it },
         )
     }
 
@@ -355,9 +359,10 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         var touchY = 0f
         var initialScaleX = 1f
         var initialScaleY = 1f
-        var initialHeightPx = 1f
+        var candidateGesture = PanelGesture.Drag
         var gesture = PanelGesture.None
         val density = resources.displayMetrics.density
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
 
         view.setOnTouchListener { _, event ->
             if (!currentSettings.configMode) {
@@ -377,20 +382,25 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     val preview = previewPanelScale.value
                     initialScaleX = preview?.scaleX ?: currentSettings.panelScaleX
                     initialScaleY = preview?.scaleY ?: currentSettings.panelScaleY
-                    initialHeightPx = view.height.toFloat().coerceAtLeast(1f)
-                    val handleSizePx = OverlayResizeHandleDp * density *
-                        minOf(initialScaleX, initialScaleY).coerceIn(0.85f, 1.4f)
-                    val nearRight = event.x >= view.width - handleSizePx
-                    val nearBottom = event.y >= view.height - handleSizePx
-                    gesture = when {
-                        nearRight && nearBottom -> PanelGesture.ResizeBoth
-                        nearRight -> PanelGesture.ResizeHorizontal
-                        nearBottom -> PanelGesture.ResizeVertical
-                        else -> PanelGesture.Drag
-                    }
+                    candidateGesture = resolvePanelGesture(event.x, event.y, view.width, view.height, density)
+                    gesture = PanelGesture.Pending
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (gesture == PanelGesture.Pending) {
+                        val dx = event.rawX - touchX
+                        val dy = event.rawY - touchY
+                        if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                            gesture = when (candidateGesture) {
+                                PanelGesture.ResizeHorizontal ->
+                                    if (abs(dx) >= abs(dy)) PanelGesture.ResizeHorizontal else PanelGesture.Drag
+                                PanelGesture.ResizeVertical ->
+                                    if (abs(dy) >= abs(dx)) PanelGesture.ResizeVertical else PanelGesture.Drag
+                                PanelGesture.ResizeBoth -> PanelGesture.ResizeBoth
+                                else -> PanelGesture.Drag
+                            }
+                        }
+                    }
                     when (gesture) {
                         PanelGesture.Drag -> {
                             params.x = initialX + (event.rawX - touchX).toInt()
@@ -408,8 +418,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 scaleX = initialScaleX,
                                 scaleY = scaleYFromHeightDelta(
                                     initialScaleY,
-                                    initialHeightPx,
                                     event.rawY - touchY,
+                                    density,
                                 ),
                             )
                         }
@@ -418,12 +428,12 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 scaleX = scaleXFromWidthDelta(initialScaleX, event.rawX - touchX, density),
                                 scaleY = scaleYFromHeightDelta(
                                     initialScaleY,
-                                    initialHeightPx,
                                     event.rawY - touchY,
+                                    density,
                                 ),
                             )
                         }
-                        PanelGesture.None -> Unit
+                        PanelGesture.Pending, PanelGesture.None -> Unit
                     }
                     true
                 }
@@ -453,9 +463,10 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 previewPanelScale.value = null
                             }
                         }
-                        PanelGesture.None -> Unit
+                        PanelGesture.Pending, PanelGesture.None -> Unit
                     }
                     gesture = PanelGesture.None
+                    candidateGesture = PanelGesture.Drag
                     true
                 }
                 else -> false
@@ -463,18 +474,57 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
     }
 
+    private fun resolvePanelGesture(
+        touchX: Float,
+        touchY: Float,
+        width: Int,
+        height: Int,
+        density: Float,
+    ): PanelGesture {
+        val cornerPx = OverlayResizeHandleDp * density
+        val edgeThicknessPx = OverlayResizeEdgeThicknessDp * density
+        val edgeLengthPx = OverlayResizeEdgeLengthDp * density
+        val inCorner =
+            touchX >= width - cornerPx &&
+                touchY >= height - cornerPx
+        if (inCorner) {
+            return PanelGesture.ResizeBoth
+        }
+        val rightCenterTop = (height - edgeLengthPx) / 2f
+        val rightCenterBottom = rightCenterTop + edgeLengthPx
+        val inRightHandle =
+            touchX >= width - edgeThicknessPx &&
+                touchY in rightCenterTop..rightCenterBottom
+        if (inRightHandle) {
+            return PanelGesture.ResizeHorizontal
+        }
+        val bottomCenterLeft = (width - edgeLengthPx) / 2f
+        val bottomCenterRight = bottomCenterLeft + edgeLengthPx
+        val inBottomHandle =
+            touchY >= height - edgeThicknessPx &&
+                touchX in bottomCenterLeft..bottomCenterRight
+        if (inBottomHandle) {
+            return PanelGesture.ResizeVertical
+        }
+        return PanelGesture.Drag
+    }
+
     private fun scaleXFromWidthDelta(initialScaleX: Float, widthDelta: Float, density: Float): Float {
         val baseWidthPx = OverlayBasePanelWidthDp * density
         val startWidthPx = baseWidthPx * initialScaleX
-        return coerceOverlayScaleX((startWidthPx + widthDelta) / baseWidthPx)
+        val proposed = (startWidthPx + widthDelta) / baseWidthPx
+        val minScaleX = maxOf(alliesMinScaleX.value, enemiesMinScaleX.value, OverlayMinScaleX)
+        return coerceOverlayScaleX(proposed).coerceAtLeast(minScaleX)
     }
 
     private fun scaleYFromHeightDelta(
         initialScaleY: Float,
-        initialHeightPx: Float,
         heightDelta: Float,
+        density: Float,
     ): Float {
-        return coerceOverlayScaleY(initialScaleY * (initialHeightPx + heightDelta) / initialHeightPx)
+        val baseHeightPx = OverlayBasePanelHeightDp * density
+        val startHeightPx = baseHeightPx * initialScaleY
+        return coerceOverlayScaleY((startHeightPx + heightDelta) / baseHeightPx)
     }
 
     private fun createLayoutParams(x: Int, y: Int): WindowManager.LayoutParams {
@@ -553,6 +603,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     private enum class PanelGesture {
         None,
+        Pending,
         Drag,
         ResizeHorizontal,
         ResizeVertical,

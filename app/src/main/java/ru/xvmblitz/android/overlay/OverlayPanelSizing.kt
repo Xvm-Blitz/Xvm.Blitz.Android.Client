@@ -1,12 +1,15 @@
 package ru.xvmblitz.android.overlay
 
-const val OverlayBaseFontSizeSp = 12f
+const val OverlayBaseFontSizeSp = 11f
 const val OverlayBasePanelWidthDp = 280f
+const val OverlayBasePanelHeightDp = 220f
 const val OverlayMinScaleX = 0.67f
 const val OverlayMaxScaleX = 2f
 const val OverlayMinScaleY = 0.25f
 const val OverlayMaxScaleY = 2f
-const val OverlayResizeHandleDp = 36f
+const val OverlayResizeHandleDp = 28f
+const val OverlayResizeEdgeThicknessDp = 20f
+const val OverlayResizeEdgeLengthDp = 36f
 
 private const val OverlayMinFontScale = 0.75f
 
@@ -31,29 +34,8 @@ fun overlayFontSizeSp(scaleY: Float): Float {
     return OverlayBaseFontSizeSp * fontScale
 }
 
-fun overlayRowSpacingDp(scaleY: Float): Float {
-    val coerced = coerceOverlayScaleY(scaleY)
-    if (coerced >= 1f) {
-        return 1.5f * coerced
-    }
-    val progress = overlayShrinkProgress(coerced)
-    return 1.5f * progress * progress * progress
-}
+const val OverlayRowSpacingPx = 5
 
-fun overlayRowVerticalPaddingDp(scaleY: Float): Float {
-    val coerced = coerceOverlayScaleY(scaleY)
-    if (coerced >= 1f) {
-        return 2f * coerced
-    }
-    val progress = overlayShrinkProgress(coerced)
-    return (2f * progress * progress).coerceAtLeast(0.25f)
-}
+fun overlayRowVerticalPaddingDp(scaleY: Float): Float = 0f
 
-fun overlayContentPaddingYDp(scaleY: Float): Float {
-    val coerced = coerceOverlayScaleY(scaleY)
-    if (coerced >= 1f) {
-        return 5f * coerced
-    }
-    val progress = overlayShrinkProgress(coerced)
-    return (4f * progress * progress).coerceAtLeast(1f)
-}
+fun overlayContentPaddingYDp(scaleY: Float): Float = (5f / 3f) * coerceOverlayScaleY(scaleY)

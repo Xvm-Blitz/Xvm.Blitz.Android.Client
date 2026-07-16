@@ -14,55 +14,68 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.xvmblitz.android.domain.PlayerSlot
 
 @Composable
 fun OverlayPanel(
-    title: String,
     players: List<PlayerSlot>,
     scaleX: Float,
     scaleY: Float,
     configMode: Boolean = false,
+    mirroredColumns: Boolean = false,
+    onMinScaleXChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val widthScale = coerceOverlayScaleX(scaleX)
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
     val heightScale = coerceOverlayScaleY(scaleY)
+    val minScaleX = remember(players, heightScale, density.density, textMeasurer, mirroredColumns) {
+        measureMinPanelScaleX(textMeasurer, players, heightScale, density, mirroredColumns)
+    }
+    LaunchedEffect(minScaleX) {
+        onMinScaleXChange(minScaleX)
+    }
+    val widthScale = coerceOverlayScaleX(scaleX).coerceAtLeast(minScaleX)
     val fontSizeSp = overlayFontSizeSp(heightScale)
     val panelWidth = (OverlayBasePanelWidthDp * widthScale).dp
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
     val contentPaddingX = (8f * widthScale).dp
     val contentPaddingY = overlayContentPaddingYDp(heightScale).dp
-    val rowSpacing = overlayRowSpacingDp(heightScale).dp
+    val rowSpacing = with(density) { OverlayRowSpacingPx.toDp() }
 
     Box(modifier = modifier.width(panelWidth)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xCC000000), RoundedCornerShape(cornerRadius))
+                .background(Color(0x80000000), RoundedCornerShape(cornerRadius))
                 .padding(horizontal = contentPaddingX, vertical = contentPaddingY),
             verticalArrangement = Arrangement.spacedBy(rowSpacing),
         ) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = (fontSizeSp + 1).sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = rowSpacing),
-            )
             players.forEach { player ->
                 PlayerRow(
                     player = player,
                     fontSizeSp = fontSizeSp,
                     scaleX = widthScale,
                     scaleY = heightScale,
+                    mirroredColumns = mirroredColumns,
                 )
             }
         }
@@ -168,11 +181,15 @@ private fun PlayerRow(
     fontSizeSp: Float,
     scaleX: Float,
     scaleY: Float,
+    mirroredColumns: Boolean,
 ) {
     val textSize = fontSizeSp.sp
+    val textStyle = compactOverlayTextStyle(textSize)
     val horizontalPadding = (6f * scaleX).dp
     val verticalPadding = overlayRowVerticalPaddingDp(scaleY).dp
     val cellSpacing = (8f * scaleX).dp
+    val columnWeights = if (mirroredColumns) OverlayEnemiesColumnWeights else OverlayAlliesColumnWeights
+    val cells = playerRowCells(player, mirroredColumns)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -181,39 +198,90 @@ private fun PlayerRow(
         horizontalArrangement = Arrangement.spacedBy(cellSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (player.isMissing) {
-            Text("—", color = Color.White, fontSize = textSize, modifier = Modifier.weight(1.4f))
-            Text("—", color = Color.White, fontSize = textSize, modifier = Modifier.weight(1.2f))
-            Text("—", color = Color.White, fontSize = textSize, modifier = Modifier.weight(0.7f))
-            Text("—", color = Color.White, fontSize = textSize, modifier = Modifier.weight(0.8f))
+        if (mirroredColumns) {
+            CompactCell(
+                text = cells[0],
+                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.End),
+                modifier = Modifier.weight(columnWeights[0]),
+                color = if (player.isMissing) Color.White else winRateColor(player.winRate),
+                textAlign = TextAlign.End,
+            )
+            CompactCell(
+                text = cells[1],
+                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                modifier = Modifier.weight(columnWeights[1]),
+                textAlign = TextAlign.End,
+            )
+            CompactCell(
+                text = cells[2],
+                textStyle = textStyle.copy(textAlign = TextAlign.Start),
+                modifier = Modifier.weight(columnWeights[2]),
+                textAlign = TextAlign.Start,
+            )
+            CompactCell(
+                text = cells[3],
+                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                modifier = Modifier.weight(columnWeights[3]),
+                textAlign = TextAlign.End,
+            )
         } else {
-            Text(
-                text = player.nicknameWithClanTag.orEmpty(),
-                color = Color.White,
-                fontSize = textSize,
-                maxLines = 1,
-                modifier = Modifier.weight(1.4f),
+            CompactCell(
+                text = cells[0],
+                textStyle = textStyle.copy(textAlign = TextAlign.Start),
+                modifier = Modifier.weight(columnWeights[0]),
+                textAlign = TextAlign.Start,
             )
-            Text(
-                text = player.tank.orEmpty(),
-                color = Color.White,
-                fontSize = textSize,
-                maxLines = 1,
-                modifier = Modifier.weight(1.2f),
+            CompactCell(
+                text = cells[1],
+                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                modifier = Modifier.weight(columnWeights[1]),
+                textAlign = TextAlign.End,
             )
-            Text(
-                text = formatBattles(player.numberOfBattles),
-                color = Color.White,
-                fontSize = textSize,
-                modifier = Modifier.weight(0.7f),
+            CompactCell(
+                text = cells[2],
+                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                modifier = Modifier.weight(columnWeights[2]),
+                textAlign = TextAlign.End,
             )
-            Text(
-                text = player.winRate?.let { String.format("%.2f%%", it) } ?: "—",
-                color = winRateColor(player.winRate),
-                fontSize = textSize,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(0.8f),
+            CompactCell(
+                text = cells[3],
+                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.Start),
+                modifier = Modifier.weight(columnWeights[3]),
+                color = if (player.isMissing) Color.White else winRateColor(player.winRate),
+                textAlign = TextAlign.Start,
             )
         }
     }
+}
+
+@Composable
+private fun CompactCell(
+    text: String,
+    textStyle: TextStyle,
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    textAlign: TextAlign = TextAlign.Start,
+) {
+    Text(
+        text = text,
+        color = color,
+        style = textStyle,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = textAlign,
+        modifier = modifier,
+    )
+}
+
+private fun compactOverlayTextStyle(fontSize: TextUnit): TextStyle {
+    return TextStyle(
+        fontSize = fontSize,
+        lineHeight = fontSize,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both,
+        ),
+    )
 }
