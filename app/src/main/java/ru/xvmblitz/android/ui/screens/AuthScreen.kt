@@ -29,17 +29,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.data.ApiDefaults
@@ -55,16 +52,12 @@ fun AuthScreen(
     usageError: String?,
     isUsageLoading: Boolean,
     onBack: () -> Unit,
+    onAuthorize: (apiKey: String, apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onAuthorized: () -> Unit,
     onLogout: () -> Unit,
     onRefreshUsage: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
-    LaunchedEffect(isAuthorized) {
-        if (isAuthorized) {
-            onRefreshUsage()
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -100,6 +93,8 @@ fun AuthScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .padding(24.dp),
+                isSubmitting = isUsageLoading,
+                onAuthorize = onAuthorize,
                 onAuthorized = onAuthorized,
             )
         }
@@ -109,10 +104,11 @@ fun AuthScreen(
 @Composable
 private fun LoginContent(
     modifier: Modifier = Modifier,
+    isSubmitting: Boolean,
+    onAuthorize: (apiKey: String, apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onAuthorized: () -> Unit,
 ) {
     val container = XvmBlitzApp.instance.container
-    val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf("") }
     var apiBaseUrl by remember {
         mutableStateOf(
@@ -121,6 +117,7 @@ private fun LoginContent(
     }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    val busy = loading || isSubmitting
 
     Column(
         modifier = modifier,
@@ -149,7 +146,7 @@ private fun LoginContent(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("API Base URL (debug)") },
                 singleLine = true,
-                enabled = !loading,
+                enabled = !busy,
                 supportingText = {
                     Text("Только в debug/test сборке")
                 },
@@ -167,7 +164,7 @@ private fun LoginContent(
             label = { Text("API ключ") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
-            enabled = !loading,
+            enabled = !busy,
         )
         if (error != null) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -176,41 +173,26 @@ private fun LoginContent(
         Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = {
-                scope.launch {
-                    loading = true
-                    error = null
-                    try {
-                        if (BuildConfig.DEBUG) {
-                            val normalized = ApiDefaults.normalizeBaseUrl(apiBaseUrl)
-                            if (!normalized.startsWith("https://")) {
-                                error = "Base URL должен начинаться с https://"
-                                return@launch
-                            }
-                            container.setApiBaseUrl(normalized)
-                            container.settingsRepository.setApiBaseUrl(normalized)
-                            apiBaseUrl = normalized
+                loading = true
+                error = null
+                onAuthorize(
+                    apiKey,
+                    if (BuildConfig.DEBUG) apiBaseUrl else null,
+                ) { result ->
+                    result
+                        .onSuccess { onAuthorized() }
+                        .onFailure { exception ->
+                            loading = false
+                            error = exception.message ?: "Неверный ключ или ошибка сети"
                         }
-
-                        if (!container.authRepository.saveApiKey(apiKey)) {
-                            error = "Ключ не может быть пустым"
-                            return@launch
-                        }
-                        container.usageApi.getUsage(apiKey.trim())
-                        onAuthorized()
-                    } catch (exception: Exception) {
-                        container.authRepository.logout()
-                        error = exception.message ?: "Неверный ключ или ошибка сети"
-                    } finally {
-                        loading = false
-                    }
                 }
             },
-            enabled = !loading && apiKey.isNotBlank(),
+            enabled = !busy && apiKey.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
         ) {
-            if (loading) {
+            if (busy) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,

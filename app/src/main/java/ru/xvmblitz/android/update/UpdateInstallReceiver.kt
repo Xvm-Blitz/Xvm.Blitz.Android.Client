@@ -30,10 +30,18 @@ class UpdateInstallReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_SUCCESS -> {
                 Toast.makeText(context, "Обновление установлено", Toast.LENGTH_LONG).show()
             }
-            else -> {
+            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> {
                 Toast.makeText(
                     context,
-                    message ?: "Не удалось установить обновление",
+                    "Несовместимая подпись пакета. Удалите старое приложение и установите APK заново.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            else -> {
+                val details = message?.takeIf { it.isNotBlank() }
+                Toast.makeText(
+                    context,
+                    details ?: "Не удалось установить обновление (код $status)",
                     Toast.LENGTH_LONG,
                 ).show()
             }

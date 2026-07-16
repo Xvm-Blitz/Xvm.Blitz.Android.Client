@@ -35,6 +35,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import ru.xvmblitz.android.R
@@ -66,6 +67,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var currentSettings = AppSettings()
     private var currentBattle = BattleUiState()
     private var hiddenForCapture = false
+    private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -192,6 +194,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun AlliesOverlayContent() {
         val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
         val battle by XvmBlitzApp.instance.container.battleStatisticsStore.state.collectAsState()
+        val previewScale by previewPanelScale.collectAsState()
         val showPanels = settings.overlayVisible && (battle.hasBattle || settings.configMode)
         if (!showPanels) {
             return
@@ -199,7 +202,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         OverlayPanel(
             title = if (settings.configMode && !battle.hasBattle) "Союзники (настройка)" else "Союзники",
             players = if (battle.hasBattle) battle.allies else BattleStatisticsStore.previewAllies,
-            fontSizeSp = settings.fontSizeSp,
+            scaleX = previewScale?.scaleX ?: settings.panelScaleX,
+            scaleY = previewScale?.scaleY ?: settings.panelScaleY,
+            configMode = settings.configMode,
         )
     }
 
@@ -207,6 +212,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun EnemiesOverlayContent() {
         val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
         val battle by XvmBlitzApp.instance.container.battleStatisticsStore.state.collectAsState()
+        val previewScale by previewPanelScale.collectAsState()
         val showPanels = settings.overlayVisible && (battle.hasBattle || settings.configMode)
         if (!showPanels) {
             return
@@ -214,7 +220,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         OverlayPanel(
             title = if (settings.configMode && !battle.hasBattle) "Противники (настройка)" else "Противники",
             players = if (battle.hasBattle) battle.enemies else BattleStatisticsStore.previewEnemies,
-            fontSizeSp = settings.fontSizeSp,
+            scaleX = previewScale?.scaleX ?: settings.panelScaleX,
+            scaleY = previewScale?.scaleY ?: settings.panelScaleY,
+            configMode = settings.configMode,
         )
     }
 
@@ -345,6 +353,11 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         var initialY = 0
         var touchX = 0f
         var touchY = 0f
+        var initialScaleX = 1f
+        var initialScaleY = 1f
+        var initialHeightPx = 1f
+        var gesture = PanelGesture.None
+        val density = resources.displayMetrics.density
 
         view.setOnTouchListener { _, event ->
             if (!currentSettings.configMode) {
@@ -355,33 +368,113 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 PanelKind.Enemies -> enemiesParams
             } ?: return@setOnTouchListener false
 
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
                     initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    val preview = previewPanelScale.value
+                    initialScaleX = preview?.scaleX ?: currentSettings.panelScaleX
+                    initialScaleY = preview?.scaleY ?: currentSettings.panelScaleY
+                    initialHeightPx = view.height.toFloat().coerceAtLeast(1f)
+                    val handleSizePx = OverlayResizeHandleDp * density *
+                        minOf(initialScaleX, initialScaleY).coerceIn(0.85f, 1.4f)
+                    val nearRight = event.x >= view.width - handleSizePx
+                    val nearBottom = event.y >= view.height - handleSizePx
+                    gesture = when {
+                        nearRight && nearBottom -> PanelGesture.ResizeBoth
+                        nearRight -> PanelGesture.ResizeHorizontal
+                        nearBottom -> PanelGesture.ResizeVertical
+                        else -> PanelGesture.Drag
+                    }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - touchX).toInt()
-                    params.y = initialY + (event.rawY - touchY).toInt()
-                    windowManager.updateViewLayout(view, params)
+                    when (gesture) {
+                        PanelGesture.Drag -> {
+                            params.x = initialX + (event.rawX - touchX).toInt()
+                            params.y = initialY + (event.rawY - touchY).toInt()
+                            windowManager.updateViewLayout(view, params)
+                        }
+                        PanelGesture.ResizeHorizontal -> {
+                            previewPanelScale.value = PanelScalePreview(
+                                scaleX = scaleXFromWidthDelta(initialScaleX, event.rawX - touchX, density),
+                                scaleY = initialScaleY,
+                            )
+                        }
+                        PanelGesture.ResizeVertical -> {
+                            previewPanelScale.value = PanelScalePreview(
+                                scaleX = initialScaleX,
+                                scaleY = scaleYFromHeightDelta(
+                                    initialScaleY,
+                                    initialHeightPx,
+                                    event.rawY - touchY,
+                                ),
+                            )
+                        }
+                        PanelGesture.ResizeBoth -> {
+                            previewPanelScale.value = PanelScalePreview(
+                                scaleX = scaleXFromWidthDelta(initialScaleX, event.rawX - touchX, density),
+                                scaleY = scaleYFromHeightDelta(
+                                    initialScaleY,
+                                    initialHeightPx,
+                                    event.rawY - touchY,
+                                ),
+                            )
+                        }
+                        PanelGesture.None -> Unit
+                    }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    scope.launch {
-                        val settingsRepository = XvmBlitzApp.instance.container.settingsRepository
-                        when (kind) {
-                            PanelKind.Allies -> settingsRepository.updateAlliesPosition(params.x, params.y)
-                            PanelKind.Enemies -> settingsRepository.updateEnemiesPosition(params.x, params.y)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    when (gesture) {
+                        PanelGesture.Drag -> {
+                            scope.launch {
+                                val settingsRepository = XvmBlitzApp.instance.container.settingsRepository
+                                when (kind) {
+                                    PanelKind.Allies -> settingsRepository.updateAlliesPosition(params.x, params.y)
+                                    PanelKind.Enemies -> settingsRepository.updateEnemiesPosition(params.x, params.y)
+                                }
+                            }
                         }
+                        PanelGesture.ResizeHorizontal,
+                        PanelGesture.ResizeVertical,
+                        PanelGesture.ResizeBoth,
+                        -> {
+                            val preview = previewPanelScale.value
+                            scope.launch {
+                                if (preview != null) {
+                                    XvmBlitzApp.instance.container.settingsRepository.updatePanelScale(
+                                        preview.scaleX,
+                                        preview.scaleY,
+                                    )
+                                }
+                                previewPanelScale.value = null
+                            }
+                        }
+                        PanelGesture.None -> Unit
                     }
+                    gesture = PanelGesture.None
                     true
                 }
                 else -> false
             }
         }
+    }
+
+    private fun scaleXFromWidthDelta(initialScaleX: Float, widthDelta: Float, density: Float): Float {
+        val baseWidthPx = OverlayBasePanelWidthDp * density
+        val startWidthPx = baseWidthPx * initialScaleX
+        return coerceOverlayScaleX((startWidthPx + widthDelta) / baseWidthPx)
+    }
+
+    private fun scaleYFromHeightDelta(
+        initialScaleY: Float,
+        initialHeightPx: Float,
+        heightDelta: Float,
+    ): Float {
+        return coerceOverlayScaleY(initialScaleY * (initialHeightPx + heightDelta) / initialHeightPx)
     }
 
     private fun createLayoutParams(x: Int, y: Int): WindowManager.LayoutParams {
@@ -457,6 +550,19 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     }
 
     private enum class PanelKind { Allies, Enemies }
+
+    private enum class PanelGesture {
+        None,
+        Drag,
+        ResizeHorizontal,
+        ResizeVertical,
+        ResizeBoth,
+    }
+
+    private data class PanelScalePreview(
+        val scaleX: Float,
+        val scaleY: Float,
+    )
 
     companion object {
         private const val NOTIFICATION_ID = 1001

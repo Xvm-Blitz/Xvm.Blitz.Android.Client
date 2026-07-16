@@ -158,7 +158,6 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onCheckForUpdates = mainViewModel::checkForUpdates,
                                 onDownloadUpdate = mainViewModel::downloadAndInstallUpdate,
-                                onFontSizeChange = mainViewModel::updateFontSize,
                                 onConfigModeChange = { enabled ->
                                     mainViewModel.setConfigMode(enabled)
                                     if (enabled) {
@@ -191,8 +190,8 @@ class MainActivity : ComponentActivity() {
                                 onBack = {
                                     navController.popBackStack()
                                 },
+                                onAuthorize = mainViewModel::authorize,
                                 onAuthorized = {
-                                    mainViewModel.refreshUsage()
                                     ensureOverlayRunning()
                                 },
                                 onLogout = {

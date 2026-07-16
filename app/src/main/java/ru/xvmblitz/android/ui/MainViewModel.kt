@@ -3,6 +3,7 @@ package ru.xvmblitz.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.xvmblitz.android.BuildConfig
+import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.AppContainer
 import ru.xvmblitz.android.data.api.ClientPlatform
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
@@ -100,8 +102,52 @@ class MainViewModel(
             usageError.value = null
             try {
                 usageState.value = container.usageApi.getUsage(apiKey)
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: Exception) {
                 usageError.value = exception.message ?: "Не удалось получить квоту"
+            } finally {
+                usageLoading.value = false
+            }
+        }
+    }
+
+    fun authorize(
+        apiKey: String,
+        apiBaseUrl: String? = null,
+        onResult: (Result<Unit>) -> Unit,
+    ) {
+        viewModelScope.launch {
+            try {
+                if (BuildConfig.DEBUG && !apiBaseUrl.isNullOrBlank()) {
+                    val normalized = ApiDefaults.normalizeBaseUrl(apiBaseUrl)
+                    if (!normalized.startsWith("https://")) {
+                        onResult(Result.failure(IllegalArgumentException("Base URL должен начинаться с https://")))
+                        return@launch
+                    }
+                    container.setApiBaseUrl(normalized)
+                    container.settingsRepository.setApiBaseUrl(normalized)
+                }
+
+                val trimmed = apiKey.trim()
+                if (trimmed.isEmpty()) {
+                    onResult(Result.failure(IllegalArgumentException("Ключ не может быть пустым")))
+                    return@launch
+                }
+
+                usageLoading.value = true
+                usageError.value = null
+                val usage = container.usageApi.getUsage(trimmed)
+                if (!container.authRepository.saveApiKey(trimmed)) {
+                    onResult(Result.failure(IllegalArgumentException("Ключ не может быть пустым")))
+                    return@launch
+                }
+                usageState.value = usage
+                onResult(Result.success(Unit))
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                onResult(Result.failure(exception))
             } finally {
                 usageLoading.value = false
             }
@@ -189,12 +235,6 @@ class MainViewModel(
                     updateState.value.error
                 },
             )
-        }
-    }
-
-    fun updateFontSize(fontSizeSp: Float) {
-        viewModelScope.launch {
-            container.settingsRepository.updateFontSize(fontSizeSp)
         }
     }
 

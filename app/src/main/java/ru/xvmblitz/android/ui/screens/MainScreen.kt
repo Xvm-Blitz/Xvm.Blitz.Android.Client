@@ -16,7 +16,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,7 +32,6 @@ fun MainScreen(
     onAuthClick: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: () -> Unit,
-    onFontSizeChange: (Float) -> Unit,
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
     onFloatingButtonEnabledChange: (Boolean) -> Unit,
@@ -183,22 +181,10 @@ fun MainScreen(
                     checked = state.settings.configMode,
                     onCheckedChange = onConfigModeChange,
                 )
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = SettingRowMinHeight),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Размер шрифта: ${"%.0f".format(state.settings.fontSizeSp)}")
-                    }
-                    Slider(
-                        value = state.settings.fontSizeSp,
-                        onValueChange = onFontSizeChange,
-                        valueRange = 10f..18f,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(28.dp),
+                if (state.settings.configMode) {
+                    Text(
+                        text = "Перетащите панели для перемещения. Правый край — ширина, нижний — высота и шрифт, угол — оба направления независимо.",
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 Text(

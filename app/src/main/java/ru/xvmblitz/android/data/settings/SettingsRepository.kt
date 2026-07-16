@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import ru.xvmblitz.android.data.ApiDefaults
+import ru.xvmblitz.android.overlay.OverlayBaseFontSizeSp
+import ru.xvmblitz.android.overlay.coerceOverlayScaleX
+import ru.xvmblitz.android.overlay.coerceOverlayScaleY
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "xvm_settings")
 
@@ -23,7 +26,8 @@ data class AppSettings(
     val enemiesY: Int = 120,
     val captureButtonX: Int = 48,
     val captureButtonY: Int = 420,
-    val fontSizeSp: Float = 12f,
+    val panelScaleX: Float = 1f,
+    val panelScaleY: Float = 1f,
     val configMode: Boolean = false,
     val overlayVisible: Boolean = true,
     val floatingButtonEnabled: Boolean = true,
@@ -34,6 +38,8 @@ class SettingsRepository(context: Context) {
     private val dataStore = context.applicationContext.settingsDataStore
 
     val settings: Flow<AppSettings> = dataStore.data.map { preferences ->
+        val legacyScale =
+            (preferences[Keys.FONT_SIZE] ?: OverlayBaseFontSizeSp) / OverlayBaseFontSizeSp
         AppSettings(
             alliesX = preferences[Keys.ALLIES_X] ?: 24,
             alliesY = preferences[Keys.ALLIES_Y] ?: 120,
@@ -41,7 +47,8 @@ class SettingsRepository(context: Context) {
             enemiesY = preferences[Keys.ENEMIES_Y] ?: 120,
             captureButtonX = preferences[Keys.CAPTURE_BUTTON_X] ?: 48,
             captureButtonY = preferences[Keys.CAPTURE_BUTTON_Y] ?: 420,
-            fontSizeSp = preferences[Keys.FONT_SIZE] ?: 12f,
+            panelScaleX = coerceOverlayScaleX(preferences[Keys.PANEL_SCALE_X] ?: legacyScale),
+            panelScaleY = coerceOverlayScaleY(preferences[Keys.PANEL_SCALE_Y] ?: legacyScale),
             configMode = preferences[Keys.CONFIG_MODE] ?: false,
             overlayVisible = preferences[Keys.OVERLAY_VISIBLE] ?: true,
             floatingButtonEnabled = preferences[Keys.FLOATING_BUTTON_ENABLED] ?: true,
@@ -65,9 +72,13 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    suspend fun updateFontSize(fontSizeSp: Float) {
+    suspend fun updatePanelScale(scaleX: Float, scaleY: Float) {
+        val coercedX = coerceOverlayScaleX(scaleX)
+        val coercedY = coerceOverlayScaleY(scaleY)
         dataStore.edit { preferences ->
-            preferences[Keys.FONT_SIZE] = fontSizeSp
+            preferences[Keys.PANEL_SCALE_X] = coercedX
+            preferences[Keys.PANEL_SCALE_Y] = coercedY
+            preferences[Keys.FONT_SIZE] = OverlayBaseFontSizeSp * coercedY
         }
     }
 
@@ -110,6 +121,8 @@ class SettingsRepository(context: Context) {
         val CAPTURE_BUTTON_X = intPreferencesKey("capture_button_x")
         val CAPTURE_BUTTON_Y = intPreferencesKey("capture_button_y")
         val FONT_SIZE = floatPreferencesKey("font_size")
+        val PANEL_SCALE_X = floatPreferencesKey("panel_scale_x")
+        val PANEL_SCALE_Y = floatPreferencesKey("panel_scale_y")
         val CONFIG_MODE = booleanPreferencesKey("config_mode")
         val OVERLAY_VISIBLE = booleanPreferencesKey("overlay_visible")
         val FLOATING_BUTTON_ENABLED = booleanPreferencesKey("floating_button_enabled")
