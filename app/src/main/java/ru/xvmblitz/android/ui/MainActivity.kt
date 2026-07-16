@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,16 +24,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.capture.CaptureEvents
 import ru.xvmblitz.android.overlay.OverlayService
 import ru.xvmblitz.android.ui.screens.AuthScreen
 import ru.xvmblitz.android.ui.screens.MainScreen
 import ru.xvmblitz.android.ui.theme.XvmBlitzTheme
+import ru.xvmblitz.android.util.AppAlertNotifier
+import ru.xvmblitz.android.util.CaptureAccessGuard
+import ru.xvmblitz.android.util.CaptureAccessResult
 
 class MainActivity : ComponentActivity() {
+    private val incomingIntents = MutableStateFlow<Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        incomingIntents.value = intent
         setContent {
             XvmBlitzTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -44,6 +53,8 @@ class MainActivity : ComponentActivity() {
                     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
                     var statusMessage by remember { mutableStateOf<String?>(null) }
                     var pendingCapture by remember { mutableStateOf(false) }
+                    val coroutineScope = rememberCoroutineScope()
+                    val incomingIntent by incomingIntents.collectAsStateWithLifecycle()
 
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission(),
@@ -72,19 +83,27 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun startCapture() {
-                        if (!container.authRepository.isAuthorized) {
-                            statusMessage = "Сначала введите API ключ"
-                            navController.navigate(Routes.Auth)
-                            return
+                        coroutineScope.launch {
+                            when (val access = CaptureAccessGuard.check(container)) {
+                                is CaptureAccessResult.Denied -> {
+                                    statusMessage = access.message
+                                    AppAlertNotifier.showApiKeyRequired(
+                                        this@MainActivity,
+                                        access.message,
+                                    )
+                                    return@launch
+                                }
+                                CaptureAccessResult.Allowed -> Unit
+                            }
+                            if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                ensureOverlayRunning()
+                                return@launch
+                            }
+                            OverlayService.start(this@MainActivity)
+                            pendingCapture = true
+                            statusMessage = "Выберите экран для захвата"
+                            OverlayService.startCapture(this@MainActivity)
                         }
-                        if (!Settings.canDrawOverlays(this@MainActivity)) {
-                            ensureOverlayRunning()
-                            return
-                        }
-                        OverlayService.start(this@MainActivity)
-                        pendingCapture = true
-                        statusMessage = "Выберите экран для захвата"
-                        OverlayService.startCapture(this@MainActivity)
                     }
 
                     LaunchedEffect(Unit) {
@@ -92,8 +111,7 @@ class MainActivity : ComponentActivity() {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                         val settings = container.settingsRepository.current()
-                        if (container.authRepository.isAuthorized &&
-                            settings.floatingButtonEnabled &&
+                        if (settings.floatingButtonEnabled &&
                             Settings.canDrawOverlays(this@MainActivity)
                         ) {
                             OverlayService.start(this@MainActivity)
@@ -117,47 +135,29 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val startDestination = if (container.authRepository.isAuthorized) {
-                        Routes.Main
-                    } else {
-                        Routes.Auth
+                    LaunchedEffect(incomingIntent) {
+                        val openAuth = incomingIntent?.getBooleanExtra(EXTRA_OPEN_AUTH, false) == true
+                        if (openAuth) {
+                            navController.navigate(Routes.Auth) {
+                                launchSingleTop = true
+                            }
+                            incomingIntent?.removeExtra(EXTRA_OPEN_AUTH)
+                        }
                     }
 
-                    NavHost(navController = navController, startDestination = startDestination) {
-                        composable(Routes.Auth) {
-                            AuthScreen(
-                                onAuthorized = {
-                                    navController.navigate(Routes.Main) {
-                                        popUpTo(Routes.Auth) { inclusive = true }
-                                    }
-                                    mainViewModel.refreshUsage()
-                                    ensureOverlayRunning()
-                                },
-                            )
-                        }
+                    NavHost(navController = navController, startDestination = Routes.Main) {
                         composable(Routes.Main) {
                             MainScreen(
                                 state = uiState,
                                 statusMessage = statusMessage,
                                 isCapturing = pendingCapture,
-                                onApiKeyClick = {
-                                    navController.navigate(Routes.Auth)
-                                },
-                                onLogout = {
-                                    mainViewModel.logout()
-                                    OverlayService.stop(this@MainActivity)
+                                onAuthClick = {
                                     navController.navigate(Routes.Auth) {
-                                        popUpTo(Routes.Main) { inclusive = true }
+                                        launchSingleTop = true
                                     }
                                 },
-                                onRefreshUsage = mainViewModel::refreshUsage,
                                 onCheckForUpdates = mainViewModel::checkForUpdates,
-                                onDownloadUpdate = {
-                                    val downloadUrl = uiState.update.downloadUrl
-                                    if (!downloadUrl.isNullOrBlank()) {
-                                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
-                                    }
-                                },
+                                onDownloadUpdate = mainViewModel::downloadAndInstallUpdate,
                                 onFontSizeChange = mainViewModel::updateFontSize,
                                 onConfigModeChange = { enabled ->
                                     mainViewModel.setConfigMode(enabled)
@@ -182,10 +182,39 @@ class MainActivity : ComponentActivity() {
                                 onCaptureClick = ::startCapture,
                             )
                         }
+                        composable(Routes.Auth) {
+                            AuthScreen(
+                                isAuthorized = uiState.isAuthorized,
+                                usage = uiState.usage,
+                                usageError = uiState.usageError,
+                                isUsageLoading = uiState.isUsageLoading,
+                                onBack = {
+                                    navController.popBackStack()
+                                },
+                                onAuthorized = {
+                                    mainViewModel.refreshUsage()
+                                    ensureOverlayRunning()
+                                },
+                                onLogout = {
+                                    mainViewModel.logout()
+                                },
+                                onRefreshUsage = mainViewModel::refreshUsage,
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingIntents.value = intent
+    }
+
+    companion object {
+        const val EXTRA_OPEN_AUTH = "open_auth"
     }
 }
 

@@ -16,6 +16,7 @@ import ru.xvmblitz.android.data.api.ClientPlatform
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
 import ru.xvmblitz.android.data.settings.AppSettings
 import ru.xvmblitz.android.domain.BattleUiState
+import ru.xvmblitz.android.update.AppUpdateInstaller
 import ru.xvmblitz.android.util.SemVerComparer
 import kotlin.time.Duration.Companion.minutes
 
@@ -26,6 +27,9 @@ data class UpdateUiState(
     val isUpdateAvailable: Boolean = false,
     val isUpToDate: Boolean = false,
     val isChecking: Boolean = false,
+    val isDownloading: Boolean = false,
+    val isInstalling: Boolean = false,
+    val downloadProgress: Float = 0f,
     val error: String? = null,
 )
 
@@ -35,6 +39,7 @@ data class MainUiState(
     val battle: BattleUiState = BattleUiState(),
     val usageError: String? = null,
     val isUsageLoading: Boolean = false,
+    val isAuthorized: Boolean = false,
     val update: UpdateUiState = UpdateUiState(),
 )
 
@@ -45,25 +50,28 @@ class MainViewModel(
     private val usageError = MutableStateFlow<String?>(null)
     private val usageLoading = MutableStateFlow(false)
     private val updateState = MutableStateFlow(UpdateUiState())
+    private val updateInstaller = AppUpdateInstaller(container.appContext, container.httpClient)
 
     val uiState: StateFlow<MainUiState> = combine(
         combine(
             container.settingsRepository.settings,
             container.battleStatisticsStore.state,
             usageState,
-        ) { settings, battle, usage ->
-            Triple(settings, battle, usage)
+            container.authRepository.apiKey,
+        ) { settings, battle, usage, apiKey ->
+            MainUiState(
+                settings = settings,
+                usage = usage,
+                battle = battle,
+                isAuthorized = !apiKey.isNullOrBlank(),
+            )
         },
         combine(usageError, usageLoading, updateState) { error, loading, update ->
             Triple(error, loading, update)
         },
-    ) { settingsBattleUsage, errorLoadingUpdate ->
-        val (settings, battle, usage) = settingsBattleUsage
+    ) { baseState, errorLoadingUpdate ->
         val (error, loading, update) = errorLoadingUpdate
-        MainUiState(
-            settings = settings,
-            usage = usage,
-            battle = battle,
+        baseState.copy(
             usageError = error,
             isUsageLoading = loading,
             update = update,
@@ -106,6 +114,42 @@ class MainViewModel(
         }
     }
 
+    fun downloadAndInstallUpdate() {
+        viewModelScope.launch {
+            val downloadUrl = updateState.value.downloadUrl
+            if (downloadUrl.isNullOrBlank()) {
+                updateState.value = updateState.value.copy(error = "Ссылка на обновление отсутствует")
+                return@launch
+            }
+            if (updateState.value.isDownloading || updateState.value.isInstalling) {
+                return@launch
+            }
+            updateState.value = updateState.value.copy(
+                isDownloading = true,
+                isInstalling = false,
+                downloadProgress = 0f,
+                error = null,
+            )
+            try {
+                updateInstaller.downloadAndInstall(downloadUrl) { progress ->
+                    updateState.value = updateState.value.copy(downloadProgress = progress)
+                }
+                updateState.value = updateState.value.copy(
+                    isDownloading = false,
+                    isInstalling = true,
+                    downloadProgress = 1f,
+                    error = null,
+                )
+            } catch (exception: Exception) {
+                updateState.value = updateState.value.copy(
+                    isDownloading = false,
+                    isInstalling = false,
+                    error = exception.message ?: "Не удалось обновить приложение",
+                )
+            }
+        }
+    }
+
     private suspend fun checkForUpdates(showLoading: Boolean) {
         val currentVersion = BuildConfig.VERSION_NAME
         if (showLoading) {
@@ -126,7 +170,7 @@ class MainViewModel(
                 return
             }
             val hasUpdate = SemVerComparer.isLessThan(currentVersion, latestVersion)
-            updateState.value = UpdateUiState(
+            updateState.value = updateState.value.copy(
                 currentVersion = currentVersion,
                 latestVersion = latestVersion,
                 downloadUrl = updateInfo.downloadUrl,
@@ -180,6 +224,7 @@ class MainViewModel(
     fun logout() {
         container.authRepository.logout()
         usageState.value = null
+        usageError.value = null
         container.battleStatisticsStore.clear()
     }
 

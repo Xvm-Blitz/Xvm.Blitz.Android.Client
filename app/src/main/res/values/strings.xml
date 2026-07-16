@@ -7,4 +7,5 @@
     <string name="capture_notification_text">Захват экрана для OCR</string>
     <string name="action_toggle_overlay">Показать/скрыть панели</string>
     <string name="action_stop_overlay">Остановить</string>
+    <string name="alerts_channel_name">Уведомления</string>
 </resources>

@@ -20,42 +20,47 @@ import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class ScreenCaptureHelper(private val context: Context) {
-    suspend fun captureGrayscalePng(resultCode: Int, data: Intent): ByteArray {
-        val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val mediaProjection = projectionManager.getMediaProjection(resultCode, data)
-            ?: error("MediaProjection is null")
+class ScreenCaptureSession(
+    context: Context,
+    resultCode: Int,
+    data: Intent,
+) : AutoCloseable {
+    private val mediaProjection: MediaProjection
+    private val handlerThread = HandlerThread("xvm-capture").also { it.start() }
+    private val handler = Handler(handlerThread.looper)
+    private val width: Int
+    private val height: Int
+    private val density: Int
+    private var closed = false
 
+    init {
+        val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjection = projectionManager.getMediaProjection(resultCode, data)
+            ?: error("MediaProjection is null")
         val metrics = DisplayMetrics()
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         @Suppress("DEPRECATION")
         windowManager.defaultDisplay.getRealMetrics(metrics)
+        width = metrics.widthPixels
+        height = metrics.heightPixels
+        density = metrics.densityDpi
+        mediaProjection.registerCallback(
+            object : MediaProjection.Callback() {
+                override fun onStop() = Unit
+            },
+            handler,
+        )
+    }
 
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
-
-        val handlerThread = HandlerThread("xvm-capture").also { it.start() }
-        val handler = Handler(handlerThread.looper)
-
+    suspend fun captureGrayscalePng(): ByteArray {
+        check(!closed) { "ScreenCaptureSession is closed" }
         val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
         var virtualDisplay: VirtualDisplay? = null
-
         return try {
             delay(FRAME_SETTLE_DELAY_MS)
             suspendCancellableCoroutine { continuation ->
                 var resumed = false
                 var acceptedFrames = 0
-
-                val callback = object : MediaProjection.Callback() {
-                    override fun onStop() {
-                        if (!resumed) {
-                            resumed = true
-                            continuation.resumeWithException(IllegalStateException("MediaProjection stopped"))
-                        }
-                    }
-                }
-                mediaProjection.registerCallback(callback, handler)
 
                 imageReader.setOnImageAvailableListener(
                     { reader ->
@@ -116,16 +121,21 @@ class ScreenCaptureHelper(private val context: Context) {
                 continuation.invokeOnCancellation {
                     virtualDisplay?.release()
                     imageReader.close()
-                    mediaProjection.stop()
-                    handlerThread.quitSafely()
                 }
             }
         } finally {
             virtualDisplay?.release()
             imageReader.close()
-            mediaProjection.stop()
-            handlerThread.quitSafely()
         }
+    }
+
+    override fun close() {
+        if (closed) {
+            return
+        }
+        closed = true
+        runCatching { mediaProjection.stop() }
+        handlerThread.quitSafely()
     }
 
     private fun toGrayscale(source: Bitmap): Bitmap {

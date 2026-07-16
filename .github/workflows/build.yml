@@ -3,21 +3,101 @@ name: CI
 "on":
   push: {}
   pull_request: {}
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "SemVer part to bump. Release runs only via this manual workflow on main/master."
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
 
 env:
   JAVA_VERSION: "17"
+  ARTIFACTS_DIR: artifacts
 
 jobs:
   build-and-test:
     name: Build & Test
+    if: >
+      github.event_name != 'push' ||
+      (
+        !contains(github.event.head_commit.message, '[skip ci]') &&
+        !contains(github.event.head_commit.message, 'chore(release)')
+      )
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+    outputs:
+      version: ${{ steps.meta-version.outputs.version }}
+      apk_name: ${{ steps.meta-version.outputs.apk_name }}
+      publish: ${{ steps.meta.outputs.publish }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          branch="${{ github.ref_name }}"
+          event_name="${{ github.event_name }}"
+          publish="false"
+
+          if [[ "$event_name" == "workflow_dispatch" ]] && [[ "$branch" == "main" || "$branch" == "master" ]]; then
+            publish="true"
+          fi
+
+          bump="${{ github.event.inputs.bump }}"
+          if [[ -z "$bump" ]]; then
+            bump="patch"
+          fi
+
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+          echo "Publish release: ${publish} (branch=${branch}, event=${event_name}, bump=${bump})"
+
+      - name: Bump version
+        id: version
+        if: steps.meta.outputs.publish == 'true'
+        shell: bash
+        run: |
+          chmod +x .github/scripts/bump-version.sh
+          ./.github/scripts/bump-version.sh "${{ steps.meta.outputs.bump }}"
+
+      - name: Read version
+        id: current-version
+        if: steps.meta.outputs.publish != 'true'
+        shell: bash
+        run: |
+          version="$(sed -nE 's/.*versionName[[:space:]]*=[[:space:]]*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' app/build.gradle.kts | head -1)"
+          if [[ -z "$version" ]]; then
+            echo "versionName not found in app/build.gradle.kts" >&2
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_OUTPUT"
+          echo "Current version: ${version}"
+
+      - name: Export version outputs
+        id: meta-version
+        shell: bash
+        run: |
+          if [[ "${{ steps.meta.outputs.publish }}" == "true" ]]; then
+            version="${{ steps.version.outputs.VERSION }}"
+          else
+            version="${{ steps.current-version.outputs.VERSION }}"
+          fi
+
+          apk_name="XVMBlitz-${version}-android.apk"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${apk_name}" >> "$GITHUB_OUTPUT"
+          echo "Using version ${version}, apk ${apk_name}"
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -31,21 +111,69 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build test APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build production APK
+        run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testReleaseUnitTest --stacktrace
 
-      - name: Prepare test artifact
+      - name: Prepare production artifact
         shell: bash
         run: |
-          mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/app-test.apk
+          mkdir -p "${{ env.ARTIFACTS_DIR }}"
 
-      - name: Upload test APK
+          apk_name="${{ steps.meta-version.outputs.apk_name }}"
+          source_apk="app/build/outputs/apk/release/app-release.apk"
+          target_apk="${{ env.ARTIFACTS_DIR }}/${apk_name}"
+
+          if [[ ! -f "$source_apk" ]]; then
+            echo "Built APK not found: $source_apk" >&2
+            exit 1
+          fi
+
+          cp "$source_apk" "$target_apk"
+          echo "Artifact: $target_apk"
+
+      - name: Upload production APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-test
-          path: artifacts/app-test.apk
+          name: production-apk
+          path: ${{ env.ARTIFACTS_DIR }}/${{ steps.meta-version.outputs.apk_name }}
           if-no-files-found: error
+
+      - name: Commit version bump
+        if: steps.meta.outputs.publish == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add app/build.gradle.kts
+          git commit -m "chore(release): bump version to ${{ steps.meta-version.outputs.version }} [skip ci]"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+  release:
+    name: Build APK & Release
+    needs: build-and-test
+    if: needs.build-and-test.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download production APK
+        uses: actions/download-artifact@v4
+        with:
+          name: production-apk
+          path: ${{ env.ARTIFACTS_DIR }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build-and-test.outputs.version }}
+          name: XVM Blitz Android ${{ needs.build-and-test.outputs.version }}
+          files: ${{ env.ARTIFACTS_DIR }}/${{ needs.build-and-test.outputs.apk_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

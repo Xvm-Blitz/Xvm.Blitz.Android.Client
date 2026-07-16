@@ -23,6 +23,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.overlay.OverlayService
+import ru.xvmblitz.android.util.AppAlertNotifier
+import ru.xvmblitz.android.util.CaptureAccessGuard
 
 class CaptureForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -49,8 +51,7 @@ class CaptureForegroundService : Service() {
             val container = XvmBlitzApp.instance.container
             val apiKey = container.authRepository.getApiKeyOrNull()
             if (apiKey.isNullOrBlank()) {
-                CaptureEvents.emit(CaptureEvents.Result.Error("API ключ не задан"))
-                OverlayService.restoreAfterCapture(applicationContext)
+                notifyAccessDenied(AppAlertNotifier.DEFAULT_API_KEY_MESSAGE)
                 stopSelf()
                 return@launch
             }
@@ -60,26 +61,65 @@ class CaptureForegroundService : Service() {
                 OverlayService.hideForCapture(applicationContext)
                 delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 
-                val pngBytes = ScreenCaptureHelper(applicationContext).captureGrayscalePng(resultCode, data)
-                val body = pngBytes.toRequestBody("image/png".toMediaType())
-                val part = MultipartBody.Part.createFormData("file", "battleScreenshot.png", body)
-                val battle = container.statisticsApi.getBattleStatistics(apiKey, part)
-                container.battleStatisticsStore.publish(battle)
-                container.settingsRepository.setOverlayVisible(true)
-                OverlayService.start(applicationContext)
-                OverlayService.restoreAfterCapture(applicationContext)
-                CaptureEvents.emit(CaptureEvents.Result.Success)
+                ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
+                    var lastErrorMessage: String? = null
+                    for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
+                        delay(attemptDelayMs)
+                        try {
+                            val pngBytes = session.captureGrayscalePng()
+                            val body = pngBytes.toRequestBody("image/png".toMediaType())
+                            val part = MultipartBody.Part.createFormData(
+                                "file",
+                                "battleScreenshot.png",
+                                body,
+                            )
+                            val battle = container.statisticsApi.getBattleStatistics(apiKey, part)
+                            container.battleStatisticsStore.publish(battle)
+                            container.settingsRepository.setOverlayVisible(true)
+                            OverlayService.start(applicationContext)
+                            OverlayService.restoreAfterCapture(applicationContext)
+                            CaptureEvents.emit(CaptureEvents.Result.Success)
+                            return@launch
+                        } catch (exception: Exception) {
+                            val denied = CaptureAccessGuard.classifyError(exception)
+                            if (denied != null) {
+                                notifyAccessDenied(denied.message)
+                                return@launch
+                            }
+                            lastErrorMessage = exception.message ?: "Ошибка захвата/распознавания"
+                        }
+                    }
+                    OverlayService.restoreAfterCapture(applicationContext)
+                    CaptureEvents.emit(
+                        CaptureEvents.Result.Error(
+                            lastErrorMessage ?: "Не удалось распознать бой",
+                        ),
+                    )
+                }
             } catch (exception: Exception) {
-                OverlayService.restoreAfterCapture(applicationContext)
-                CaptureEvents.emit(
-                    CaptureEvents.Result.Error(exception.message ?: "Ошибка захвата/распознавания"),
-                )
+                val denied = CaptureAccessGuard.classifyError(exception)
+                if (denied != null) {
+                    notifyAccessDenied(denied.message)
+                } else {
+                    OverlayService.restoreAfterCapture(applicationContext)
+                    CaptureEvents.emit(
+                        CaptureEvents.Result.Error(
+                            exception.message ?: "Ошибка захвата/распознавания",
+                        ),
+                    )
+                }
             } finally {
                 stopSelf()
             }
         }
 
         return START_NOT_STICKY
+    }
+
+    private suspend fun notifyAccessDenied(message: String) {
+        AppAlertNotifier.showApiKeyRequired(applicationContext, message)
+        OverlayService.restoreAfterCapture(applicationContext)
+        CaptureEvents.emit(CaptureEvents.Result.Error(message))
     }
 
     private fun startAsForeground() {
@@ -115,6 +155,8 @@ class CaptureForegroundService : Service() {
         private const val NOTIFICATION_ID = 1002
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "data"
+
+        private val CAPTURE_ATTEMPT_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, CaptureForegroundService::class.java).apply {

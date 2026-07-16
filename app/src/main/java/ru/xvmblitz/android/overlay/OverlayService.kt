@@ -45,6 +45,9 @@ import ru.xvmblitz.android.domain.BattleStatisticsStore
 import ru.xvmblitz.android.domain.BattleUiState
 import ru.xvmblitz.android.ui.MainActivity
 import ru.xvmblitz.android.ui.theme.XvmBlitzTheme
+import ru.xvmblitz.android.util.AppAlertNotifier
+import ru.xvmblitz.android.util.CaptureAccessGuard
+import ru.xvmblitz.android.util.CaptureAccessResult
 import kotlin.math.abs
 
 class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
@@ -217,6 +220,13 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     private fun startCaptureAfterHidingOverlay() {
         scope.launch {
+            when (val access = CaptureAccessGuard.check(XvmBlitzApp.instance.container)) {
+                is CaptureAccessResult.Denied -> {
+                    AppAlertNotifier.showApiKeyRequired(this@OverlayService, access.message)
+                    return@launch
+                }
+                CaptureAccessResult.Allowed -> Unit
+            }
             setHiddenForCapture(true)
             delay(OVERLAY_HIDE_DELAY_MS)
             CaptureRequestActivity.start(this@OverlayService)

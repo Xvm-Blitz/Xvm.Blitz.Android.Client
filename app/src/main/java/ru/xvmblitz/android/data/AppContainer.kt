@@ -24,7 +24,7 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 class AppContainer(context: Context) {
-    private val appContext = context.applicationContext
+    val appContext = context.applicationContext
 
     val json = Json {
         ignoreUnknownKeys = true
@@ -37,7 +37,7 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(appContext)
     val battleStatisticsStore = BattleStatisticsStore()
 
-    private val okHttpClient = OkHttpClient.Builder()
+    val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -103,7 +103,7 @@ class AppContainer(context: Context) {
     private fun createRetrofit(baseUrl: String): Retrofit {
         return Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(okHttpClient)
+            .client(httpClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
     }

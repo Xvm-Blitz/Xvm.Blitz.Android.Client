@@ -9,7 +9,13 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import ru.xvmblitz.android.XvmBlitzApp
+import ru.xvmblitz.android.overlay.OverlayService
+import ru.xvmblitz.android.util.AppAlertNotifier
+import ru.xvmblitz.android.util.CaptureAccessGuard
+import ru.xvmblitz.android.util.CaptureAccessResult
 
 class CaptureRequestActivity : ComponentActivity() {
     private val mediaProjectionLauncher = registerForActivityResult(
@@ -18,6 +24,7 @@ class CaptureRequestActivity : ComponentActivity() {
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             CaptureForegroundService.start(this, result.resultCode, result.data!!)
         } else {
+            OverlayService.restoreAfterCapture(this)
             Toast.makeText(this, "Захват экрана отменён", Toast.LENGTH_SHORT).show()
         }
         finish()
@@ -26,20 +33,31 @@ class CaptureRequestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (!XvmBlitzApp.instance.container.authRepository.isAuthorized) {
-            Toast.makeText(this, "Сначала введите API ключ", Toast.LENGTH_SHORT).show()
-            finish()
-            return
-        }
+        lifecycleScope.launch {
+            when (val access = CaptureAccessGuard.check(XvmBlitzApp.instance.container)) {
+                is CaptureAccessResult.Denied -> {
+                    AppAlertNotifier.showApiKeyRequired(this@CaptureRequestActivity, access.message)
+                    OverlayService.restoreAfterCapture(this@CaptureRequestActivity)
+                    finish()
+                    return@launch
+                }
+                CaptureAccessResult.Allowed -> Unit
+            }
 
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Нужно разрешение «Поверх других окон»", Toast.LENGTH_LONG).show()
-            finish()
-            return
-        }
+            if (!Settings.canDrawOverlays(this@CaptureRequestActivity)) {
+                OverlayService.restoreAfterCapture(this@CaptureRequestActivity)
+                Toast.makeText(
+                    this@CaptureRequestActivity,
+                    "Нужно разрешение «Поверх других окон»",
+                    Toast.LENGTH_LONG,
+                ).show()
+                finish()
+                return@launch
+            }
 
-        val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        }
     }
 
     companion object {
