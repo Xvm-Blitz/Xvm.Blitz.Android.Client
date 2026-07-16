@@ -1,6 +1,6 @@
 # XVM Blitz Android Client
 
-Android-порт [Xvm.Blitz.Windows.Client](../Xvm.Blitz.Windows.Client): companion для Tanks Blitz.
+Android-порт [Xvm.Blitz.Windows.Client](https://github.com/Xvm-Blitz/Xvm.Blitz.Windows.Client): companion для Tanks Blitz.
 
 ## Стек
 
@@ -16,13 +16,28 @@ Android-порт [Xvm.Blitz.Windows.Client](../Xvm.Blitz.Windows.Client): compan
 Требования: JDK 17+, Android SDK (platform 35 подтянется Gradle).
 
 ```powershell
-cd "C:\Disk D\Rider projects\Xvm.Blitz.Android.Client"
 .\gradlew.bat :app:assembleDebug
 ```
 
-APK: `app\build\outputs\apk\debug\app-debug.apk`
+```bash
+./gradlew :app:assembleDebug
+```
+
+APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 Или откройте папку в Android Studio / Rider и запустите `app`.
+
+### Подпись (debug)
+
+В репозитории лежит **debug keystore** `app/keystore/xvm-debug.jks` (alias `androiddebugkey`, пароль `android`). Он нужен только для локальной разработки и CI без production-секретов.
+
+Настройки подписи: `app/keystore.properties` (шаблон — `app/keystore.properties.example`).
+
+```powershell
+.\gradlew.bat :app:assembleRelease
+```
+
+APK: `app/build/outputs/apk/release/app-release.apk` (при локальной сборке тоже подписывается debug-ключом, пока не подставите свой production keystore в `keystore.properties`).
 
 ## Ручной checklist
 

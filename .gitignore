@@ -2,6 +2,7 @@
 .gradle/
 /local.properties
 /.idea/
+.kotlin/
 .DS_Store
 /build
 /app/build
@@ -11,3 +12,5 @@
 *.apk
 *.ap_
 *.aab
+
+app/keystore/xvm-production.jks

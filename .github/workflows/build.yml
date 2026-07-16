@@ -111,6 +111,33 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Setup release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PUBLISH: ${{ steps.meta.outputs.publish }}
+        shell: bash
+        run: |
+          if [[ -n "${ANDROID_KEYSTORE_BASE64}" ]]; then
+            mkdir -p app/keystore
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > app/keystore/xvm-production.jks
+            {
+              echo "storeFile=keystore/xvm-production.jks"
+              echo "storePassword=${ANDROID_KEYSTORE_PASSWORD}"
+              echo "keyAlias=${ANDROID_KEY_ALIAS}"
+              echo "keyPassword=${ANDROID_KEY_PASSWORD}"
+            } > app/keystore.properties
+            echo "Using production keystore from repository secrets"
+          elif [[ "${PUBLISH}" == "true" ]]; then
+            echo "Production signing secrets are required to publish a release." >&2
+            echo "Set ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD." >&2
+            exit 1
+          else
+            echo "Production secrets not set — using committed debug keystore"
+          fi
+
       - name: Build production APK
         run: ./gradlew :app:assembleRelease --stacktrace
 
