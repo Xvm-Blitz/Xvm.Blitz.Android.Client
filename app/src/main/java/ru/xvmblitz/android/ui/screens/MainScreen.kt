@@ -10,35 +10,58 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.xvmblitz.android.ui.MainUiState
 
 @Composable
 fun MainScreen(
     state: MainUiState,
-    statusMessage: String?,
-    isCapturing: Boolean,
     onAuthClick: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: () -> Unit,
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
-    onFloatingButtonEnabledChange: (Boolean) -> Unit,
-    onClearBattle: () -> Unit,
-    onCaptureClick: () -> Unit,
+    onUpdateAlliesPosition: (Int, Int) -> Unit,
+    onUpdateEnemiesPosition: (Int, Int) -> Unit,
     onOpenGuide: () -> Unit,
 ) {
+    var alliesXText by remember { mutableStateOf(state.settings.alliesX.toString()) }
+    var alliesYText by remember { mutableStateOf(state.settings.alliesY.toString()) }
+    var enemiesXText by remember { mutableStateOf(state.settings.enemiesX.toString()) }
+    var enemiesYText by remember { mutableStateOf(state.settings.enemiesY.toString()) }
+
+    LaunchedEffect(
+        state.settings.alliesX,
+        state.settings.alliesY,
+        state.settings.enemiesX,
+        state.settings.enemiesY,
+    ) {
+        alliesXText = state.settings.alliesX.toString()
+        alliesYText = state.settings.alliesY.toString()
+        enemiesXText = state.settings.enemiesX.toString()
+        enemiesYText = state.settings.enemiesY.toString()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -46,59 +69,22 @@ fun MainScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        Text(
+            text = "XVM Blitz Android",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "XVM Blitz Android",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Text(
-                    text = "Кнопка «Статистика» поверх игры: тап — захват, перетаскивание — позиция. Скрыть панели — долгий тап по таблице.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                )
+            OutlinedButton(onClick = onOpenGuide) {
+                Text("Обучение")
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenGuide) {
-                    Text("Инструкция")
-                }
-                OutlinedButton(onClick = onAuthClick) {
-                    Text(if (state.isAuthorized) "Профиль" else "Войти")
-                }
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Бой", style = MaterialTheme.typography.titleMedium)
-                Button(
-                    onClick = onCaptureClick,
-                    enabled = !isCapturing,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (isCapturing) "Идёт захват…" else "Считать статистику")
-                }
-                if (statusMessage != null) {
-                    Text(statusMessage, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (state.battle.hasBattle) {
-                    Text(
-                        text = "Есть данные боя: ${state.battle.allies.count { !it.isMissing }} союзников, " +
-                            "${state.battle.enemies.count { !it.isMissing }} противников",
-                    )
-                    OutlinedButton(onClick = onClearBattle, modifier = Modifier.fillMaxWidth()) {
-                        Text("Скрыть / очистить бой")
-                    }
-                } else {
-                    Text("Статистика боя ещё не загружена")
-                }
+            OutlinedButton(onClick = onAuthClick) {
+                Text(if (state.isAuthorized) "Профиль" else "Войти")
             }
         }
 
@@ -173,11 +159,6 @@ fun MainScreen(
             ) {
                 Text("Оверлей", style = MaterialTheme.typography.titleMedium)
                 SettingSwitchRow(
-                    title = "Кнопка поверх экрана",
-                    checked = state.settings.floatingButtonEnabled,
-                    onCheckedChange = onFloatingButtonEnabledChange,
-                )
-                SettingSwitchRow(
                     title = "Показывать оверлей",
                     checked = state.settings.overlayVisible,
                     onCheckedChange = onOverlayVisibleChange,
@@ -189,22 +170,80 @@ fun MainScreen(
                 )
                 if (state.settings.configMode) {
                     Text(
-                        text = "Перетащите панели для перемещения. Правый край — ширина, нижний — высота и шрифт, угол — оба направления независимо.",
+                        text = "Экран зафиксирован горизонтально. Перетащите панели или задайте координаты ниже.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                Text(
-                    text = "Позиции: Союзники(${state.settings.alliesX}, ${state.settings.alliesY}), " +
-                        "Противники(${state.settings.enemiesX}, ${state.settings.enemiesY})",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = SettingRowMinHeight),
+
+                Text("Координаты союзников", style = MaterialTheme.typography.titleSmall)
+                CoordinateRow(
+                    xText = alliesXText,
+                    yText = alliesYText,
+                    onXChange = { alliesXText = it.filter(Char::isDigit).take(5) },
+                    onYChange = { alliesYText = it.filter(Char::isDigit).take(5) },
+                    onApply = {
+                        val x = alliesXText.toIntOrNull() ?: return@CoordinateRow
+                        val y = alliesYText.toIntOrNull() ?: return@CoordinateRow
+                        onUpdateAlliesPosition(x, y)
+                    },
+                )
+
+                Text("Координаты противников", style = MaterialTheme.typography.titleSmall)
+                CoordinateRow(
+                    xText = enemiesXText,
+                    yText = enemiesYText,
+                    onXChange = { enemiesXText = it.filter(Char::isDigit).take(5) },
+                    onYChange = { enemiesYText = it.filter(Char::isDigit).take(5) },
+                    onApply = {
+                        val x = enemiesXText.toIntOrNull() ?: return@CoordinateRow
+                        val y = enemiesYText.toIntOrNull() ?: return@CoordinateRow
+                        onUpdateEnemiesPosition(x, y)
+                    },
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CoordinateRow(
+    xText: String,
+    yText: String,
+    onXChange: (String) -> Unit,
+    onYChange: (String) -> Unit,
+    onApply: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = xText,
+                onValueChange = onXChange,
+                label = { Text("X") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = yText,
+                onValueChange = onYChange,
+                label = { Text("Y") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        OutlinedButton(
+            onClick = onApply,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Применить")
+        }
     }
 }
 

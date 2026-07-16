@@ -256,10 +256,15 @@ class MainViewModel(
         }
     }
 
-    fun setFloatingButtonEnabled(enabled: Boolean, onDone: (() -> Unit)? = null) {
+    fun updateAlliesPosition(x: Int, y: Int) {
         viewModelScope.launch {
-            container.settingsRepository.setFloatingButtonEnabled(enabled)
-            onDone?.invoke()
+            container.settingsRepository.updateAlliesPosition(x, y)
+        }
+    }
+
+    fun updateEnemiesPosition(x: Int, y: Int) {
+        viewModelScope.launch {
+            container.settingsRepository.updateEnemiesPosition(x, y)
         }
     }
 

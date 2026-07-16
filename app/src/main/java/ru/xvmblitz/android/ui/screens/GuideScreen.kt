@@ -61,7 +61,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import ru.xvmblitz.android.overlay.OverlayTableBackground
 
 private data class GuideStep(
     val title: String,
@@ -88,12 +90,12 @@ private val GuideSteps = listOf(
     ),
     GuideStep(
         title = "Кнопка поверх игры",
-        description = "Включите «Кнопка поверх экрана». Перетащите кнопку в удобное место. Короткий тап запускает захват статистики.",
+        description = "Кнопка «Статистика» всегда поверх игры. Перетащите её в удобное место. Короткий тап запускает захват статистики.",
         illustration = GuideIllustration.Fab,
     ),
     GuideStep(
         title = "Считать статистику",
-        description = "Откройте экран загрузки боя в Tanks Blitz и нажмите «Статистика» на плавающей кнопке или «Считать статистику» в приложении.",
+        description = "Откройте экран загрузки боя в Tanks Blitz и нажмите «Статистика» на плавающей кнопке.",
         illustration = GuideIllustration.Capture,
     ),
     GuideStep(
@@ -108,7 +110,7 @@ private val GuideSteps = listOf(
     ),
     GuideStep(
         title = "Перемещение панелей",
-        description = "Включите «Режим настройки панелей» и перетащите таблицу за её тело, чтобы выбрать позицию на экране.",
+        description = "Включите «Режим настройки панелей» (экран станет горизонтальным) и перетащите таблицу или задайте координаты вручную.",
         illustration = GuideIllustration.ConfigMove,
     ),
     GuideStep(
@@ -144,7 +146,7 @@ fun GuideScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Инструкция") },
+                title = { Text("Обучение") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -160,8 +162,8 @@ fun GuideScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -194,31 +196,42 @@ fun GuideScreen(
                     .weight(1f)
                     .fillMaxWidth(),
             ) { current ->
-                Column(
+                Row(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GuideIllustrationBox(
-                        illustration = current.illustration,
+                    LandscapePhoneFrame(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surface),
-                    )
-                    Text(
-                        text = current.title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = current.description,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-                        textAlign = TextAlign.Center,
-                    )
+                            .weight(1.35f)
+                            .fillMaxSize(),
+                    ) {
+                        GuideIllustrationBox(
+                            illustration = current.illustration,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.Start,
+                    ) {
+                        Text(
+                            text = current.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Start,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = current.description,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                            textAlign = TextAlign.Start,
+                        )
+                    }
                 }
             }
 
@@ -243,6 +256,45 @@ fun GuideScreen(
                     Text(if (isLast) "Готово" else "Далее")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LandscapePhoneFrame(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .fillMaxSize(0.92f)
+                .clip(RoundedCornerShape(28.dp))
+                .background(Color(0xFF1C212B))
+                .padding(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center,
+            ) {
+                content()
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 2.dp)
+                    .width(3.dp)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0xFF2E3545)),
+            )
         }
     }
 }
@@ -319,16 +371,16 @@ private fun FabIllustration() {
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .offset(x = (-28).dp, y = drift.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xE63D7EA6))
-                .padding(horizontal = 9.dp, vertical = 7.dp),
+                .padding(horizontal = 6.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "Статистика",
                 color = Color.White,
                 fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
             )
         }
     }
@@ -378,23 +430,30 @@ private fun CaptureIllustration() {
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "capture-flash",
     )
-    Canvas(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-        drawRoundRect(
-            color = Color(0xFF2A3140),
-            cornerRadius = CornerRadius(24f, 24f),
-            size = size,
-        )
-        drawRoundRect(
-            color = Color.White.copy(alpha = flash),
-            topLeft = Offset(size.width * 0.12f, size.height * 0.18f),
-            size = Size(size.width * 0.76f, size.height * 0.55f),
-            cornerRadius = CornerRadius(12f, 12f),
-        )
-        drawCircle(
-            color = Color(0xFF3D7EA6),
-            radius = size.minDimension * 0.08f,
-            center = Offset(size.width * 0.5f, size.height * 0.82f),
-        )
+    Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRoundRect(
+                color = Color(0xFF2A3140),
+                cornerRadius = CornerRadius(16f, 16f),
+                size = size,
+            )
+            drawRoundRect(
+                color = Color.White.copy(alpha = flash),
+                topLeft = Offset(size.width * 0.08f, size.height * 0.14f),
+                size = Size(size.width * 0.84f, size.height * 0.62f),
+                cornerRadius = CornerRadius(10f, 10f),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 18.dp, bottom = 14.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xE63D7EA6))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+        ) {
+            Text("Статистика", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -424,7 +483,7 @@ private fun MiniPanel(modifier: Modifier = Modifier, mirrored: Boolean) {
         modifier = modifier
             .height(120.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0x80000000))
+            .background(OverlayTableBackground)
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -437,7 +496,7 @@ private fun MiniPanel(modifier: Modifier = Modifier, mirrored: Boolean) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0x14000000), RoundedCornerShape(4.dp))
+                    .background(OverlayTableBackground, RoundedCornerShape(4.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -469,7 +528,7 @@ private fun ConfigMoveIllustration() {
                 .width(160.dp)
                 .height(90.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0x80000000)),
+                .background(OverlayTableBackground),
         )
         Canvas(modifier = Modifier.fillMaxSize()) {
             val pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
@@ -499,7 +558,7 @@ private fun ConfigResizeIllustration() {
                 .width((180 * grow).dp)
                 .height((100 * grow).dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0x80000000)),
+                .background(OverlayTableBackground),
         )
         Canvas(
             modifier = Modifier

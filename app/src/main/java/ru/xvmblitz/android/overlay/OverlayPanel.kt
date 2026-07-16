@@ -55,7 +55,7 @@ fun OverlayPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0x80000000), RoundedCornerShape(cornerRadius))
+                .background(OverlayTableBackground, RoundedCornerShape(cornerRadius))
                 .padding(horizontal = contentPaddingX, vertical = contentPaddingY),
             verticalArrangement = Arrangement.spacedBy(rowSpacing),
         ) {
@@ -183,7 +183,7 @@ private fun PlayerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x14000000), RoundedCornerShape((4f * minOf(scaleX, scaleY)).dp))
+            .background(OverlayTableBackground, RoundedCornerShape((4f * minOf(scaleX, scaleY)).dp))
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(cellSpacing),
         verticalAlignment = Alignment.CenterVertically,

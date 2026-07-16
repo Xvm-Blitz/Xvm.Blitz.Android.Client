@@ -11,6 +11,9 @@ import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -23,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -70,6 +74,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var currentBattle = BattleUiState()
     private var hiddenForCapture = false
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
+    private val fabErrorPulse = MutableStateFlow(0)
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -115,12 +120,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             ACTION_HIDE_FOR_CAPTURE -> setHiddenForCapture(true)
             ACTION_RESTORE_AFTER_CAPTURE -> setHiddenForCapture(false)
             ACTION_CAPTURE -> startCaptureAfterHidingOverlay()
-            ACTION_STOP -> {
-                scope.launch {
-                    XvmBlitzApp.instance.container.settingsRepository.setFloatingButtonEnabled(false)
-                    stopSelf()
-                }
-            }
+            ACTION_STOP -> stopSelf()
         }
         return START_STICKY
     }
@@ -184,7 +184,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     @Composable
     private fun FloatingActionButtonContent() {
-        OverlayFab()
+        val errorPulse by fabErrorPulse.collectAsState()
+        OverlayFab(errorPulse = errorPulse)
     }
 
     @Composable
@@ -227,6 +228,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         scope.launch {
             when (val access = CaptureAccessGuard.check(XvmBlitzApp.instance.container)) {
                 is CaptureAccessResult.Denied -> {
+                    signalFabAccessDenied()
                     AppAlertNotifier.showApiKeyRequired(this@OverlayService, access.message)
                     return@launch
                 }
@@ -235,6 +237,26 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             setHiddenForCapture(true)
             delay(OVERLAY_HIDE_DELAY_MS)
             CaptureRequestActivity.start(this@OverlayService)
+        }
+    }
+
+    private fun signalFabAccessDenied() {
+        fabErrorPulse.value = fabErrorPulse.value + 1
+        vibrateError()
+    }
+
+    private fun vibrateError() {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService<VibratorManager>()?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService<Vibrator>()
+        } ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(180, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(180)
         }
     }
 
@@ -263,11 +285,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         alliesView?.visibility = panelVisibility
         enemiesView?.visibility = panelVisibility
         captureButtonView?.visibility =
-            if (currentSettings.floatingButtonEnabled) {
-                android.view.View.VISIBLE
-            } else {
-                android.view.View.GONE
-            }
+            if (panelsVisible) android.view.View.GONE else android.view.View.VISIBLE
     }
 
     private fun applySettings(settings: AppSettings) {
@@ -326,6 +344,10 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                         scope.launch {
                             XvmBlitzApp.instance.container.settingsRepository
                                 .updateCaptureButtonPosition(params.x, params.y)
+                        }
+                    } else if (currentSettings.configMode) {
+                        scope.launch {
+                            XvmBlitzApp.instance.container.settingsRepository.setOverlayVisible(true)
                         }
                     } else {
                         startCaptureAfterHidingOverlay()
