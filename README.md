@@ -11,16 +11,6 @@ Android-порт [Xvm.Blitz.Windows.Client](../Xvm.Blitz.Windows.Client): compan
 - MediaProjection (ручной захват экрана)
 - `TYPE_APPLICATION_OVERLAY` (статистика поверх игры)
 
-## MVP
-
-1. Авторизация по API-ключу (`X-Xvm-Api-Key`)
-2. Квота `GET v1/api_keys/usage`
-3. Кнопка «Считать статистику» → MediaProjection → grayscale PNG → `POST v1/battles/statistics`
-4. Overlay союзников/противников (7 слотов, цвета win-rate)
-5. Настройки: drag в режиме конфигурации, размер шрифта, show/hide
-
-Не перенесено: replay-watcher, патч `.dvpl`, hotkeys, tray.
-
 ## Сборка
 
 Требования: JDK 17+, Android SDK (platform 35 подтянется Gradle).
