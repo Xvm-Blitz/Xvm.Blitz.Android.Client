@@ -35,13 +35,12 @@ fun OverlayPanel(
 ) {
     val widthScale = coerceOverlayScaleX(scaleX)
     val heightScale = coerceOverlayScaleY(scaleY)
-    val spacingScale = overlayVerticalSpacingScale(heightScale)
-    val fontSizeSp = OverlayBaseFontSizeSp * heightScale
+    val fontSizeSp = overlayFontSizeSp(heightScale)
     val panelWidth = (OverlayBasePanelWidthDp * widthScale).dp
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
     val contentPaddingX = (8f * widthScale).dp
-    val contentPaddingY = (8f * spacingScale).dp
-    val rowSpacing = (4f * spacingScale).dp
+    val contentPaddingY = overlayContentPaddingYDp(heightScale).dp
+    val rowSpacing = overlayRowSpacingDp(heightScale).dp
 
     Box(modifier = modifier.width(panelWidth)) {
         Column(
@@ -64,7 +63,6 @@ fun OverlayPanel(
                     fontSizeSp = fontSizeSp,
                     scaleX = widthScale,
                     scaleY = heightScale,
-                    spacingScale = spacingScale,
                 )
             }
         }
@@ -170,11 +168,10 @@ private fun PlayerRow(
     fontSizeSp: Float,
     scaleX: Float,
     scaleY: Float,
-    spacingScale: Float,
 ) {
     val textSize = fontSizeSp.sp
     val horizontalPadding = (6f * scaleX).dp
-    val verticalPadding = (4f * spacingScale).dp
+    val verticalPadding = overlayRowVerticalPaddingDp(scaleY).dp
     val cellSpacing = (8f * scaleX).dp
     Row(
         modifier = Modifier

@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -100,13 +100,13 @@ jobs:
           echo "Using version ${version}, apk ${apk_name}"
 
       - name: Setup JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -135,7 +135,7 @@ jobs:
           echo "Artifact: $target_apk"
 
       - name: Upload production APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-apk
           path: ${{ env.ARTIFACTS_DIR }}/${{ steps.meta-version.outputs.apk_name }}
@@ -163,13 +163,13 @@ jobs:
 
     steps:
       - name: Download production APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: production-apk
           path: ${{ env.ARTIFACTS_DIR }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.build-and-test.outputs.version }}
           name: XVM Blitz Android ${{ needs.build-and-test.outputs.version }}
