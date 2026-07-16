@@ -11,27 +11,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class OverlayFabMode {
-    Capture,
-    Hide,
-}
-
 @Composable
 fun OverlayFab(
-    mode: OverlayFabMode,
     modifier: Modifier = Modifier,
 ) {
-    val (text, background) = when (mode) {
-        OverlayFabMode.Capture -> "Статистика" to Color(0xE63D7EA6)
-        OverlayFabMode.Hide -> "Скрыть статистику" to Color(0xE6C45C5C)
-    }
     Text(
-        text = text,
+        text = "Статистика",
         color = Color.White,
-        fontSize = 13.sp,
+        fontSize = 10.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = modifier
-            .background(background, RoundedCornerShape(24.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .background(Color(0xE63D7EA6), RoundedCornerShape(16.dp))
+            .padding(horizontal = 9.dp, vertical = 7.dp),
     )
 }

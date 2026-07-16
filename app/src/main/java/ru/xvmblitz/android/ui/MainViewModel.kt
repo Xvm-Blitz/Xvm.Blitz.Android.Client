@@ -244,6 +244,12 @@ class MainViewModel(
         }
     }
 
+    fun setGuideCompleted(completed: Boolean = true) {
+        viewModelScope.launch {
+            container.settingsRepository.setGuideCompleted(completed)
+        }
+    }
+
     fun setOverlayVisible(visible: Boolean) {
         viewModelScope.launch {
             container.settingsRepository.setOverlayVisible(visible)

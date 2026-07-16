@@ -37,6 +37,7 @@ fun MainScreen(
     onFloatingButtonEnabledChange: (Boolean) -> Unit,
     onClearBattle: () -> Unit,
     onCaptureClick: () -> Unit,
+    onOpenGuide: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -56,13 +57,18 @@ fun MainScreen(
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Text(
-                    text = "Кнопка «Статистика» висит поверх игры. Тап — захват, перетаскивание — позиция.",
+                    text = "Кнопка «Статистика» поверх игры: тап — захват, перетаскивание — позиция. Скрыть панели — долгий тап по таблице.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
             }
-            OutlinedButton(onClick = onAuthClick) {
-                Text(if (state.isAuthorized) "Профиль" else "Войти")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onOpenGuide) {
+                    Text("Инструкция")
+                }
+                OutlinedButton(onClick = onAuthClick) {
+                    Text(if (state.isAuthorized) "Профиль" else "Войти")
+                }
             }
         }
 

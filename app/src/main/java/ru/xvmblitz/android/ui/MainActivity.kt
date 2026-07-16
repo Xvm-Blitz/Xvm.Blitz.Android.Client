@@ -30,6 +30,7 @@ import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.capture.CaptureEvents
 import ru.xvmblitz.android.overlay.OverlayService
 import ru.xvmblitz.android.ui.screens.AuthScreen
+import ru.xvmblitz.android.ui.screens.GuideScreen
 import ru.xvmblitz.android.ui.screens.MainScreen
 import ru.xvmblitz.android.ui.theme.XvmBlitzTheme
 import ru.xvmblitz.android.util.AppAlertNotifier
@@ -111,6 +112,11 @@ class MainActivity : ComponentActivity() {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                         val settings = container.settingsRepository.current()
+                        if (!settings.guideCompleted) {
+                            navController.navigate(Routes.Guide) {
+                                launchSingleTop = true
+                            }
+                        }
                         if (settings.floatingButtonEnabled &&
                             Settings.canDrawOverlays(this@MainActivity)
                         ) {
@@ -179,6 +185,23 @@ class MainActivity : ComponentActivity() {
                                     mainViewModel.clearBattle()
                                 },
                                 onCaptureClick = ::startCapture,
+                                onOpenGuide = {
+                                    navController.navigate(Routes.Guide) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                            )
+                        }
+                        composable(Routes.Guide) {
+                            GuideScreen(
+                                onBack = {
+                                    mainViewModel.setGuideCompleted(true)
+                                    navController.popBackStack()
+                                },
+                                onFinished = {
+                                    mainViewModel.setGuideCompleted(true)
+                                    navController.popBackStack()
+                                },
                             )
                         }
                         composable(Routes.Auth) {
@@ -220,4 +243,5 @@ class MainActivity : ComponentActivity() {
 private object Routes {
     const val Auth = "auth"
     const val Main = "main"
+    const val Guide = "guide"
 }

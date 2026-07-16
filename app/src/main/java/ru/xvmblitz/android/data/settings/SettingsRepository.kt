@@ -32,6 +32,7 @@ data class AppSettings(
     val overlayVisible: Boolean = true,
     val floatingButtonEnabled: Boolean = true,
     val apiBaseUrl: String = ApiDefaults.BASE_URL,
+    val guideCompleted: Boolean = false,
 )
 
 class SettingsRepository(context: Context) {
@@ -53,6 +54,7 @@ class SettingsRepository(context: Context) {
             overlayVisible = preferences[Keys.OVERLAY_VISIBLE] ?: true,
             floatingButtonEnabled = preferences[Keys.FLOATING_BUTTON_ENABLED] ?: true,
             apiBaseUrl = preferences[Keys.API_BASE_URL] ?: ApiDefaults.BASE_URL,
+            guideCompleted = preferences[Keys.GUIDE_COMPLETED] ?: false,
         )
     }
 
@@ -113,6 +115,12 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setGuideCompleted(completed: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.GUIDE_COMPLETED] = completed
+        }
+    }
+
     private object Keys {
         val ALLIES_X = intPreferencesKey("allies_x")
         val ALLIES_Y = intPreferencesKey("allies_y")
@@ -127,5 +135,6 @@ class SettingsRepository(context: Context) {
         val OVERLAY_VISIBLE = booleanPreferencesKey("overlay_visible")
         val FLOATING_BUTTON_ENABLED = booleanPreferencesKey("floating_button_enabled")
         val API_BASE_URL = stringPreferencesKey("api_base_url")
+        val GUIDE_COMPLETED = booleanPreferencesKey("guide_completed")
     }
 }

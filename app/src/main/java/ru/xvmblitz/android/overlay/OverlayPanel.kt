@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,7 +23,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,23 +38,16 @@ fun OverlayPanel(
     scaleY: Float,
     configMode: Boolean = false,
     mirroredColumns: Boolean = false,
-    onMinScaleXChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
+    val widthScale = coerceOverlayScaleX(scaleX)
     val heightScale = coerceOverlayScaleY(scaleY)
-    val minScaleX = remember(players, heightScale, density.density, textMeasurer, mirroredColumns) {
-        measureMinPanelScaleX(textMeasurer, players, heightScale, density, mirroredColumns)
-    }
-    LaunchedEffect(minScaleX) {
-        onMinScaleXChange(minScaleX)
-    }
-    val widthScale = coerceOverlayScaleX(scaleX).coerceAtLeast(minScaleX)
     val fontSizeSp = overlayFontSizeSp(heightScale)
-    val panelWidth = (OverlayBasePanelWidthDp * widthScale).dp
+    val fontScale = fontSizeSp / OverlayBaseFontSizeSp
+    val panelWidth = (OverlayBasePanelWidthDp * widthScale * fontScale).dp
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
-    val contentPaddingX = (8f * widthScale).dp
+    val contentPaddingX = (8f * widthScale * fontScale).dp
     val contentPaddingY = overlayContentPaddingYDp(heightScale).dp
     val rowSpacing = with(density) { OverlayRowSpacingPx.toDp() }
 
@@ -73,7 +63,7 @@ fun OverlayPanel(
                 PlayerRow(
                     player = player,
                     fontSizeSp = fontSizeSp,
-                    scaleX = widthScale,
+                    scaleX = widthScale * fontScale,
                     scaleY = heightScale,
                     mirroredColumns = mirroredColumns,
                 )
@@ -193,7 +183,7 @@ private fun PlayerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33000000), RoundedCornerShape((4f * minOf(scaleX, scaleY)).dp))
+            .background(Color(0x14000000), RoundedCornerShape((4f * minOf(scaleX, scaleY)).dp))
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(cellSpacing),
         verticalAlignment = Alignment.CenterVertically,

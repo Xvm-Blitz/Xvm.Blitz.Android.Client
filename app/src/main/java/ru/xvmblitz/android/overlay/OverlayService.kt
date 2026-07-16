@@ -13,8 +13,10 @@ import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.PopupMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,8 +70,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var currentBattle = BattleUiState()
     private var hiddenForCapture = false
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
-    private val alliesMinScaleX = MutableStateFlow(OverlayMinScaleX)
-    private val enemiesMinScaleX = MutableStateFlow(OverlayMinScaleX)
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -184,12 +184,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     @Composable
     private fun FloatingActionButtonContent() {
-        val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
-        val battle by XvmBlitzApp.instance.container.battleStatisticsStore.state.collectAsState()
-        val statsVisible = settings.overlayVisible && (battle.hasBattle || settings.configMode)
-        OverlayFab(
-            mode = if (statsVisible) OverlayFabMode.Hide else OverlayFabMode.Capture,
-        )
+        OverlayFab()
     }
 
     @Composable
@@ -207,7 +202,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             scaleY = previewScale?.scaleY ?: settings.panelScaleY,
             configMode = settings.configMode,
             mirroredColumns = false,
-            onMinScaleXChange = { alliesMinScaleX.value = it },
         )
     }
 
@@ -226,7 +220,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             scaleY = previewScale?.scaleY ?: settings.panelScaleY,
             configMode = settings.configMode,
             mirroredColumns = true,
-            onMinScaleXChange = { enemiesMinScaleX.value = it },
         )
     }
 
@@ -335,15 +328,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 .updateCaptureButtonPosition(params.x, params.y)
                         }
                     } else {
-                        val statsVisible = currentSettings.overlayVisible &&
-                            (currentBattle.hasBattle || currentSettings.configMode)
-                        if (statsVisible) {
-                            scope.launch {
-                                XvmBlitzApp.instance.container.settingsRepository.setOverlayVisible(false)
-                            }
-                        } else {
-                            startCaptureAfterHidingOverlay()
-                        }
+                        startCaptureAfterHidingOverlay()
                     }
                     true
                 }
@@ -361,17 +346,18 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         var initialScaleY = 1f
         var candidateGesture = PanelGesture.Drag
         var gesture = PanelGesture.None
+        var longPressTriggered = false
+        var longPressJob: Job? = null
         val density = resources.displayMetrics.density
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong()
 
         view.setOnTouchListener { _, event ->
-            if (!currentSettings.configMode) {
-                return@setOnTouchListener false
-            }
             val params = when (kind) {
                 PanelKind.Allies -> alliesParams
                 PanelKind.Enemies -> enemiesParams
             } ?: return@setOnTouchListener false
+            val configMode = currentSettings.configMode
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -379,18 +365,35 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    longPressTriggered = false
                     val preview = previewPanelScale.value
                     initialScaleX = preview?.scaleX ?: currentSettings.panelScaleX
                     initialScaleY = preview?.scaleY ?: currentSettings.panelScaleY
-                    candidateGesture = resolvePanelGesture(event.x, event.y, view.width, view.height, density)
-                    gesture = PanelGesture.Pending
+                    candidateGesture = if (configMode) {
+                        resolvePanelGesture(event.x, event.y, view.width, view.height, density)
+                    } else {
+                        PanelGesture.Drag
+                    }
+                    gesture = if (configMode) PanelGesture.Pending else PanelGesture.None
+                    longPressJob?.cancel()
+                    longPressJob = scope.launch {
+                        delay(longPressTimeoutMs)
+                        if (!longPressTriggered &&
+                            (gesture == PanelGesture.Pending || gesture == PanelGesture.None)
+                        ) {
+                            longPressTriggered = true
+                            gesture = PanelGesture.None
+                            showPanelContextMenu(view)
+                        }
+                    }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (gesture == PanelGesture.Pending) {
-                        val dx = event.rawX - touchX
-                        val dy = event.rawY - touchY
-                        if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                        longPressJob?.cancel()
+                        if (configMode && gesture == PanelGesture.Pending) {
                             gesture = when (candidateGesture) {
                                 PanelGesture.ResizeHorizontal ->
                                     if (abs(dx) >= abs(dy)) PanelGesture.ResizeHorizontal else PanelGesture.Drag
@@ -403,34 +406,26 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     }
                     when (gesture) {
                         PanelGesture.Drag -> {
-                            params.x = initialX + (event.rawX - touchX).toInt()
-                            params.y = initialY + (event.rawY - touchY).toInt()
+                            params.x = initialX + dx.toInt()
+                            params.y = initialY + dy.toInt()
                             windowManager.updateViewLayout(view, params)
                         }
                         PanelGesture.ResizeHorizontal -> {
                             previewPanelScale.value = PanelScalePreview(
-                                scaleX = scaleXFromWidthDelta(initialScaleX, event.rawX - touchX, density),
+                                scaleX = scaleXFromWidthDelta(initialScaleX, dx, density),
                                 scaleY = initialScaleY,
                             )
                         }
                         PanelGesture.ResizeVertical -> {
                             previewPanelScale.value = PanelScalePreview(
                                 scaleX = initialScaleX,
-                                scaleY = scaleYFromHeightDelta(
-                                    initialScaleY,
-                                    event.rawY - touchY,
-                                    density,
-                                ),
+                                scaleY = scaleYFromHeightDelta(initialScaleY, dy, density),
                             )
                         }
                         PanelGesture.ResizeBoth -> {
                             previewPanelScale.value = PanelScalePreview(
-                                scaleX = scaleXFromWidthDelta(initialScaleX, event.rawX - touchX, density),
-                                scaleY = scaleYFromHeightDelta(
-                                    initialScaleY,
-                                    event.rawY - touchY,
-                                    density,
-                                ),
+                                scaleX = scaleXFromWidthDelta(initialScaleX, dx, density),
+                                scaleY = scaleYFromHeightDelta(initialScaleY, dy, density),
                             )
                         }
                         PanelGesture.Pending, PanelGesture.None -> Unit
@@ -438,32 +433,39 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    when (gesture) {
-                        PanelGesture.Drag -> {
-                            scope.launch {
-                                val settingsRepository = XvmBlitzApp.instance.container.settingsRepository
-                                when (kind) {
-                                    PanelKind.Allies -> settingsRepository.updateAlliesPosition(params.x, params.y)
-                                    PanelKind.Enemies -> settingsRepository.updateEnemiesPosition(params.x, params.y)
+                    longPressJob?.cancel()
+                    if (!longPressTriggered) {
+                        when (gesture) {
+                            PanelGesture.Drag -> {
+                                if (configMode) {
+                                    scope.launch {
+                                        val settingsRepository = XvmBlitzApp.instance.container.settingsRepository
+                                        when (kind) {
+                                            PanelKind.Allies ->
+                                                settingsRepository.updateAlliesPosition(params.x, params.y)
+                                            PanelKind.Enemies ->
+                                                settingsRepository.updateEnemiesPosition(params.x, params.y)
+                                        }
+                                    }
                                 }
                             }
-                        }
-                        PanelGesture.ResizeHorizontal,
-                        PanelGesture.ResizeVertical,
-                        PanelGesture.ResizeBoth,
-                        -> {
-                            val preview = previewPanelScale.value
-                            scope.launch {
-                                if (preview != null) {
-                                    XvmBlitzApp.instance.container.settingsRepository.updatePanelScale(
-                                        preview.scaleX,
-                                        preview.scaleY,
-                                    )
+                            PanelGesture.ResizeHorizontal,
+                            PanelGesture.ResizeVertical,
+                            PanelGesture.ResizeBoth,
+                            -> {
+                                val preview = previewPanelScale.value
+                                scope.launch {
+                                    if (preview != null) {
+                                        XvmBlitzApp.instance.container.settingsRepository.updatePanelScale(
+                                            preview.scaleX,
+                                            preview.scaleY,
+                                        )
+                                    }
+                                    previewPanelScale.value = null
                                 }
-                                previewPanelScale.value = null
                             }
+                            PanelGesture.Pending, PanelGesture.None -> Unit
                         }
-                        PanelGesture.Pending, PanelGesture.None -> Unit
                     }
                     gesture = PanelGesture.None
                     candidateGesture = PanelGesture.Drag
@@ -472,6 +474,44 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 else -> false
             }
         }
+    }
+
+    private fun showPanelContextMenu(anchor: View) {
+        val params = when (anchor) {
+            alliesView -> alliesParams
+            enemiesView -> enemiesParams
+            else -> null
+        } ?: return
+        setWindowFocusable(anchor, params, focusable = true)
+        val popup = PopupMenu(this, anchor, Gravity.CENTER)
+        popup.menu.add(0, MENU_HIDE_STATS, 0, "Скрыть статистику")
+        popup.setOnMenuItemClickListener { item ->
+            if (item.itemId == MENU_HIDE_STATS) {
+                scope.launch {
+                    XvmBlitzApp.instance.container.settingsRepository.setOverlayVisible(false)
+                }
+                true
+            } else {
+                false
+            }
+        }
+        popup.setOnDismissListener {
+            setWindowFocusable(anchor, params, focusable = false)
+        }
+        popup.show()
+    }
+
+    private fun setWindowFocusable(
+        view: View,
+        params: WindowManager.LayoutParams,
+        focusable: Boolean,
+    ) {
+        params.flags = if (focusable) {
+            params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        runCatching { windowManager.updateViewLayout(view, params) }
     }
 
     private fun resolvePanelGesture(
@@ -512,9 +552,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun scaleXFromWidthDelta(initialScaleX: Float, widthDelta: Float, density: Float): Float {
         val baseWidthPx = OverlayBasePanelWidthDp * density
         val startWidthPx = baseWidthPx * initialScaleX
-        val proposed = (startWidthPx + widthDelta) / baseWidthPx
-        val minScaleX = maxOf(alliesMinScaleX.value, enemiesMinScaleX.value, OverlayMinScaleX)
-        return coerceOverlayScaleX(proposed).coerceAtLeast(minScaleX)
+        return coerceOverlayScaleX((startWidthPx + widthDelta) / baseWidthPx)
     }
 
     private fun scaleYFromHeightDelta(
@@ -617,6 +655,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     companion object {
         private const val NOTIFICATION_ID = 1001
+        private const val MENU_HIDE_STATS = 1
         const val OVERLAY_HIDE_DELAY_MS = 400L
         const val ACTION_TOGGLE = "ru.xvmblitz.android.overlay.TOGGLE"
         const val ACTION_CAPTURE = "ru.xvmblitz.android.overlay.CAPTURE"
