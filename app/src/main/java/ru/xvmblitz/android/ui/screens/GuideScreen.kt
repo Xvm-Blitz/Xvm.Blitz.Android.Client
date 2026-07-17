@@ -1,6 +1,7 @@
 package ru.xvmblitz.android.ui.screens
 
 import android.content.res.Configuration
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
@@ -35,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,13 +69,26 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ru.xvmblitz.android.overlay.OverlayTableBackground
+import ru.xvmblitz.android.util.GamePacksHelper
 
 private data class GuideStep(
     val title: String,
@@ -99,12 +116,14 @@ private val GuideSteps = listOf(
     ),
     GuideStep(
         title = "Файлы в каталоге игры",
-        description = "Без замены файлов распознавание работает крайне некорректно. " +
-            "Откройте Android/data/com.tanksblitz/files/packs/ (создайте папки, если их нет): " +
-            "UI/Screens3 → Font.style.dvpl; " +
-            "UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl; " +
-            "Fonts → Jost-Light.ttf.dvpl. " +
-            "Иногда надписи в интерфейсе игры могут отображаться некорректно.",
+        description = """
+            Без замены файлов распознавание работает крайне некорректно.
+            Откройте Android/data/com.tanksblitz/files/packs/ (создайте папки, если их нет) и положите файлы:
+            UI/Screens3 → Font.style.dvpl
+            UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl
+            Fonts → Jost-Light.ttf.dvpl
+            Иногда надписи в интерфейсе игры могут отображаться некорректно.
+        """.trimIndent(),
         illustration = GuideIllustration.GameFiles,
     ),
     GuideStep(
@@ -151,8 +170,12 @@ fun GuideScreen(
     onFinished: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var stepIndex by remember { mutableIntStateOf(0) }
     var goingForward by remember { mutableStateOf(true) }
+    var exportedFolder by remember { mutableStateOf<File?>(null) }
+    var showOpenExportedFolderDialog by remember { mutableStateOf(false) }
     val step = GuideSteps[stepIndex]
     val isLast = stepIndex == GuideSteps.lastIndex
     val configuration = LocalConfiguration.current
@@ -178,17 +201,77 @@ fun GuideScreen(
         }
     }
 
-    LaunchedEffect(stepIndex) {
-        val dwellMs = if (GuideSteps[stepIndex].illustration == GuideIllustration.GameFiles) {
-            9_000L
-        } else {
-            5_200L
+    fun openTanksFolder() {
+        if (!GamePacksHelper.openTanksRootFolder(context)) {
+            Toast.makeText(
+                context,
+                "Не удалось открыть папку игры. Откройте её вручную в проводнике.",
+                Toast.LENGTH_LONG,
+            ).show()
         }
-        delay(dwellMs)
+    }
+
+    LaunchedEffect(stepIndex) {
+        if (GuideSteps[stepIndex].illustration == GuideIllustration.GameFiles) {
+            val folder = withContext(Dispatchers.IO) {
+                runCatching { GamePacksHelper.exportPackFiles(context) }.getOrNull()
+            }
+            if (folder != null) {
+                exportedFolder = folder
+                showOpenExportedFolderDialog = true
+            } else {
+                Toast.makeText(context, "Не удалось сохранить файлы для копирования", Toast.LENGTH_LONG).show()
+            }
+            return@LaunchedEffect
+        }
+        delay(5_200L)
         if (stepIndex < GuideSteps.lastIndex) {
             goingForward = true
             stepIndex += 1
         }
+    }
+
+    if (showOpenExportedFolderDialog && exportedFolder != null) {
+        AlertDialog(
+            onDismissRequest = { showOpenExportedFolderDialog = false },
+            title = { Text("Файлы сохранены") },
+            text = {
+                Text(
+                    "Файлы для копирования сохранены в:\n${exportedFolder!!.absolutePath}\n\n" +
+                        "Открыть эту папку в проводнике?",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val folder = exportedFolder
+                        showOpenExportedFolderDialog = false
+                        if (folder == null) {
+                            return@TextButton
+                        }
+                        coroutineScope.launch {
+                            val opened = withContext(Dispatchers.IO) {
+                                GamePacksHelper.openFolder(context, folder)
+                            }
+                            if (!opened) {
+                                Toast.makeText(
+                                    context,
+                                    "Не удалось открыть папку. Путь: ${folder.absolutePath}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    },
+                ) {
+                    Text("Открыть")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOpenExportedFolderDialog = false }) {
+                    Text("Позже")
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -285,6 +368,8 @@ fun GuideScreen(
                         GuideStepText(
                             title = current.title,
                             description = current.description,
+                            isGameFilesStep = current.illustration == GuideIllustration.GameFiles,
+                            onOpenTanksFolder = ::openTanksFolder,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxSize(),
@@ -310,6 +395,8 @@ fun GuideScreen(
                         GuideStepText(
                             title = current.title,
                             description = current.description,
+                            isGameFilesStep = current.illustration == GuideIllustration.GameFiles,
+                            onOpenTanksFolder = ::openTanksFolder,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f),
@@ -344,6 +431,8 @@ fun GuideScreen(
 private fun GuideStepText(
     title: String,
     description: String,
+    isGameFilesStep: Boolean,
+    onOpenTanksFolder: () -> Unit,
     modifier: Modifier = Modifier,
     textAlign: TextAlign,
 ) {
@@ -364,14 +453,69 @@ private fun GuideStepText(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-            textAlign = textAlign,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (isGameFilesStep) {
+            GameFilesDescription(
+                textAlign = textAlign,
+                onOpenTanksFolder = onOpenTanksFolder,
+            )
+        } else {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                textAlign = textAlign,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
+}
+
+@Composable
+private fun GameFilesDescription(
+    textAlign: TextAlign,
+    onOpenTanksFolder: () -> Unit,
+) {
+    val linkColor = MaterialTheme.colorScheme.primary
+    val bodyColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
+    val packsPath = "${GamePacksHelper.TANKS_PACKS_RELATIVE_PATH}/"
+    val annotated = remember(linkColor, bodyColor, onOpenTanksFolder) {
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = bodyColor)) {
+                append("Без замены файлов распознавание работает крайне некорректно.\n")
+                append("Откройте ")
+            }
+            withLink(
+                LinkAnnotation.Clickable(
+                    tag = "tanks_folder",
+                    styles = TextLinkStyles(
+                        style = SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    ),
+                    linkInteractionListener = { onOpenTanksFolder() },
+                ),
+            ) {
+                append(packsPath)
+            }
+            withStyle(SpanStyle(color = bodyColor)) {
+                append(" (создайте папки, если их нет) и положите файлы:\n")
+                append("UI/Screens3 → Font.style.dvpl\n")
+                append("UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl\n")
+                append("Fonts → Jost-Light.ttf.dvpl\n")
+                append("Иногда надписи в интерфейсе игры могут отображаться некорректно.")
+            }
+        }
+    }
+    Text(
+        text = annotated,
+        style = MaterialTheme.typography.bodyMedium.copy(
+            textAlign = textAlign,
+            color = bodyColor,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
