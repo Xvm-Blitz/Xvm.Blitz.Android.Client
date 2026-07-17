@@ -23,10 +23,7 @@ jobs:
     name: Build & Test
     if: >
       github.event_name != 'push' ||
-      !(
-        github.actor == 'github-actions[bot]' &&
-        contains(github.event.head_commit.message, 'chore(release)')
-      )
+      !contains(github.event.head_commit.message, 'chore(release)')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -39,7 +36,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
           fetch-depth: 0
 
       - name: Resolve release metadata
@@ -172,8 +169,16 @@ jobs:
 
       - name: Commit version bump
         if: steps.meta.outputs.publish == 'true'
+        env:
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
         shell: bash
         run: |
+          if [[ -z "${RELEASE_PUSH_TOKEN}" ]]; then
+            echo "Secret RELEASE_PUSH_TOKEN is required to push version bumps to protected main." >&2
+            echo "Create a fine-grained PAT (Contents: Read and write), add your user to branch protection bypass, then store the PAT as RELEASE_PUSH_TOKEN." >&2
+            exit 1
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
