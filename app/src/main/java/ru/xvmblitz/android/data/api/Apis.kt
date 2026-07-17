@@ -25,7 +25,7 @@ interface UsageApi {
 }
 
 interface UpdatesApi {
-    @GET("v1/updates/versions")
+    @GET("v1/releases")
     suspend fun getLatestVersion(
         @Query("current_version") currentVersion: String,
         @Query("platform") platform: ClientPlatform,

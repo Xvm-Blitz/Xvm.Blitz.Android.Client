@@ -204,3 +204,34 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Register release in XVM API
+        env:
+          CONTINUOUS_DELIVERY_S2S_KEY: ${{ secrets.CONTINUOUS_DELIVERY_S2S_KEY }}
+          RELEASE_DOWNLOAD_BASE_URL: ${{ vars.RELEASE_DOWNLOAD_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CONTINUOUS_DELIVERY_S2S_KEY}" ]]; then
+            echo "Secret CONTINUOUS_DELIVERY_S2S_KEY is required." >&2
+            exit 1
+          fi
+
+          if [[ -z "${RELEASE_DOWNLOAD_BASE_URL}" ]]; then
+            echo "Repository variable RELEASE_DOWNLOAD_BASE_URL is required." >&2
+            exit 1
+          fi
+
+          version="${{ needs.build-and-test.outputs.version }}"
+          apk_name="${{ needs.build-and-test.outputs.apk_name }}"
+          base_url="${RELEASE_DOWNLOAD_BASE_URL%/}"
+          download_url="${base_url}/releases/download/v${version}/${apk_name}"
+
+          echo "Registering Android release ${version}"
+          echo "Download URL: ${download_url}"
+
+          curl -sfS -X POST "https://xvmblitz.ru/api/v1/releases" \
+            -H "Content-Type: application/json" \
+            -H "X-S2S-Key: ${CONTINUOUS_DELIVERY_S2S_KEY}" \
+            -d "{\"platform\":\"android\",\"version\":\"${version}\",\"download_url\":\"${download_url}\"}"
