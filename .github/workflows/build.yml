@@ -174,8 +174,10 @@ jobs:
         shell: bash
         run: |
           if [[ -z "${RELEASE_PUSH_TOKEN}" ]]; then
-            echo "Secret RELEASE_PUSH_TOKEN is required to push version bumps to protected main." >&2
-            echo "Create a fine-grained PAT (Contents: Read and write), add your user to branch protection bypass, then store the PAT as RELEASE_PUSH_TOKEN." >&2
+            echo "Secret RELEASE_PUSH_TOKEN is empty or missing." >&2
+            echo "Add it as a Repository secret (Settings → Secrets and variables → Actions → Repository secrets)." >&2
+            echo "Do not put it only in the 'release' Environment — this job cannot read environment secrets." >&2
+            echo "Use a classic PAT with 'repo' scope from your user account (must be in branch protection bypass)." >&2
             exit 1
           fi
 
