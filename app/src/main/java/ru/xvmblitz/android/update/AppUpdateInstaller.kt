@@ -9,7 +9,7 @@ import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
+
 class AppUpdateInstaller(
     private val context: Context,
     private val httpClient: OkHttpClient,
@@ -29,11 +29,7 @@ class AppUpdateInstaller(
             error("Разрешите установку из этого источника и повторите обновление")
         }
 
-        val request = Request.Builder().url(downloadUrl).build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                error("Не удалось скачать обновление: HTTP ${response.code}")
-            }
+        GitHubReleaseDownloader.openDownloadResponse(httpClient, downloadUrl).use { response ->
             val body = response.body ?: error("Пустой ответ при скачивании обновления")
             val totalBytes = body.contentLength()
             val packageInstaller = context.packageManager.packageInstaller

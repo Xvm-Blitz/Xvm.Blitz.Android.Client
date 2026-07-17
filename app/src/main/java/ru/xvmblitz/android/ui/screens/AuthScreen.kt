@@ -29,6 +29,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import ru.xvmblitz.android.ui.components.AdaptiveButton
+import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -307,13 +309,20 @@ private fun AuthorizedQuotaContent(
             Text(usageError ?: "Информация об использовании отсутствует")
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onRefreshUsage, enabled = !isUsageLoading) {
-                Text("Обновить")
-            }
-            Button(onClick = { showChangeKeyConfirm = true }) {
-                Text("Сменить API ключ")
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AdaptiveOutlinedButton(
+                text = "Обновить",
+                onClick = onRefreshUsage,
+                enabled = !isUsageLoading,
+            )
+            AdaptiveButton(
+                text = "Сменить API ключ",
+                onClick = { showChangeKeyConfirm = true },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 

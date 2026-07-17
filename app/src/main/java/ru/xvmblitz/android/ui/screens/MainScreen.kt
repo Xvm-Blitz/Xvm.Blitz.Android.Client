@@ -14,12 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -38,6 +36,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import ru.xvmblitz.android.ui.MainUiState
+import ru.xvmblitz.android.ui.components.AdaptiveButton
+import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
 
 @Composable
 fun MainScreen(
@@ -83,15 +83,19 @@ fun MainScreen(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(onClick = onOpenGuide) {
-                Text("Обучение")
-            }
-            OutlinedButton(onClick = onAuthClick) {
-                Text(if (state.isAuthorized) "Профиль" else "Войти")
-            }
+            AdaptiveOutlinedButton(
+                text = "Обучение",
+                onClick = onOpenGuide,
+                modifier = Modifier.weight(1f),
+            )
+            AdaptiveOutlinedButton(
+                text = if (state.isAuthorized) "Профиль" else "Войти",
+                onClick = onAuthClick,
+                modifier = Modifier.weight(1f),
+            )
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -131,28 +135,28 @@ fun MainScreen(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AdaptiveOutlinedButton(
+                        text = "Проверить обновление",
                         onClick = onCheckForUpdates,
                         enabled = !state.update.isChecking &&
                             !state.update.isDownloading &&
                             !state.update.isInstalling,
-                    ) {
-                        Text("Проверить обновление")
-                    }
+                        modifier = Modifier.weight(1f),
+                    )
                     if (state.update.isUpdateAvailable) {
-                        Button(
+                        AdaptiveButton(
+                            text = when {
+                                state.update.isDownloading -> "Скачивание…"
+                                state.update.isInstalling -> "Установка…"
+                                else -> "Обновить"
+                            },
                             onClick = onDownloadUpdate,
                             enabled = !state.update.isDownloading && !state.update.isInstalling,
-                        ) {
-                            Text(
-                                when {
-                                    state.update.isDownloading -> "Скачивание…"
-                                    state.update.isInstalling -> "Установка…"
-                                    else -> "Обновить"
-                                },
-                            )
-                        }
+                        )
                     }
                 }
             }
@@ -261,13 +265,16 @@ private fun CoordinateRow(
                 modifier = Modifier.weight(1f),
             )
         }
-        Button(
+        AdaptiveButton(
+            text = if (showSaved) "Сохранено" else "Применить",
             onClick = {
                 if (onApply()) {
                     savedPulse += 1
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .scale(checkScale),
             colors = if (showSaved) {
                 ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.tertiary,
@@ -275,12 +282,7 @@ private fun CoordinateRow(
             } else {
                 ButtonDefaults.buttonColors()
             },
-        ) {
-            Text(
-                text = if (showSaved) "Сохранено" else "Применить",
-                modifier = Modifier.scale(checkScale),
-            )
-        }
+        )
     }
 }
 

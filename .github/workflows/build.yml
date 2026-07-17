@@ -139,6 +139,8 @@ jobs:
           fi
 
       - name: Build production APK
+        env:
+          RELEASE_DOWNLOAD_TOKEN: ${{ secrets.RELEASE_DOWNLOAD_TOKEN }}
         run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Unit tests
@@ -209,6 +211,9 @@ jobs:
         env:
           CONTINUOUS_DELIVERY_S2S_KEY: ${{ secrets.CONTINUOUS_DELIVERY_S2S_KEY }}
           RELEASE_DOWNLOAD_BASE_URL: ${{ vars.RELEASE_DOWNLOAD_BASE_URL }}
+          PUBLIC_RELEASES_REPO: ${{ vars.PUBLIC_RELEASES_REPO }}
+          PUBLIC_RELEASES_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -218,15 +223,43 @@ jobs:
             exit 1
           fi
 
-          if [[ -z "${RELEASE_DOWNLOAD_BASE_URL}" ]]; then
-            echo "Repository variable RELEASE_DOWNLOAD_BASE_URL is required." >&2
-            exit 1
-          fi
-
           version="${{ needs.build-and-test.outputs.version }}"
           apk_name="${{ needs.build-and-test.outputs.apk_name }}"
-          base_url="${RELEASE_DOWNLOAD_BASE_URL%/}"
-          download_url="${base_url}/releases/download/v${version}/${apk_name}"
+          apk_path="${{ env.ARTIFACTS_DIR }}/${apk_name}"
+          tag="v${version}"
+
+          if [[ -n "${PUBLIC_RELEASES_REPO}" ]]; then
+            if [[ -n "${PUBLIC_RELEASES_TOKEN}" ]]; then
+              export GH_TOKEN="${PUBLIC_RELEASES_TOKEN}"
+            fi
+
+            if gh release view "${tag}" --repo "${PUBLIC_RELEASES_REPO}" >/dev/null 2>&1; then
+              gh release upload "${tag}" "${apk_path}" --repo "${PUBLIC_RELEASES_REPO}" --clobber
+            else
+              gh release create "${tag}" "${apk_path}" \
+                --repo "${PUBLIC_RELEASES_REPO}" \
+                --title "XVM Blitz Android ${version}" \
+                --notes "Android client ${version}"
+            fi
+
+            download_url="https://github.com/${PUBLIC_RELEASES_REPO}/releases/download/${tag}/${apk_name}"
+          else
+            asset_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+              --jq ".assets[] | select(.name==\"${apk_name}\") | .url")"
+
+            if [[ -n "${asset_url}" ]]; then
+              download_url="${asset_url}"
+              echo "WARNING: Registered private GitHub API asset URL."
+              echo "Clients need secret RELEASE_DOWNLOAD_TOKEN, or set PUBLIC_RELEASES_REPO for a public mirror."
+            else
+              if [[ -z "${RELEASE_DOWNLOAD_BASE_URL}" ]]; then
+                echo "Unable to resolve release asset URL and RELEASE_DOWNLOAD_BASE_URL is empty." >&2
+                exit 1
+              fi
+              base_url="${RELEASE_DOWNLOAD_BASE_URL%/}"
+              download_url="${base_url}/releases/download/${tag}/${apk_name}"
+            fi
+          fi
 
           echo "Registering Android release ${version}"
           echo "Download URL: ${download_url}"
