@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,6 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +45,7 @@ import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +78,11 @@ fun AuthScreen(
         },
     ) { padding ->
         if (isAuthorized) {
+            LaunchedEffect(Unit) {
+                if (usage == null && !isUsageLoading) {
+                    onRefreshUsage()
+                }
+            }
             AuthorizedQuotaContent(
                 modifier = Modifier
                     .fillMaxSize()
@@ -180,7 +188,10 @@ private fun LoginContent(
                     if (BuildConfig.DEBUG) apiBaseUrl else null,
                 ) { result ->
                     result
-                        .onSuccess { onAuthorized() }
+                        .onSuccess {
+                            loading = false
+                            onAuthorized()
+                        }
                         .onFailure { exception ->
                             loading = false
                             error = exception.message ?: "Неверный ключ или ошибка сети"
@@ -221,6 +232,8 @@ private fun AuthorizedQuotaContent(
     onRefreshUsage: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    var showChangeKeyConfirm by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -267,6 +280,13 @@ private fun AuthorizedQuotaContent(
                     Text(
                         text = "${formatUsageDate(usage.periodStart)} — ${formatUsageDate(usage.periodEnd)}",
                     )
+                    remainingPeriodText(usage.periodEnd)?.let { remaining ->
+                        Text(
+                            text = remaining,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        )
+                    }
                 }
             }
 
@@ -291,10 +311,37 @@ private fun AuthorizedQuotaContent(
             OutlinedButton(onClick = onRefreshUsage, enabled = !isUsageLoading) {
                 Text("Обновить")
             }
-            Button(onClick = onLogout) {
+            Button(onClick = { showChangeKeyConfirm = true }) {
                 Text("Сменить API ключ")
             }
         }
+    }
+
+    if (showChangeKeyConfirm) {
+        AlertDialog(
+            onDismissRequest = { showChangeKeyConfirm = false },
+            title = { Text("Подтверждение смены API ключа") },
+            text = {
+                Text(
+                    "Вы уверены, что хотите сменить API ключ? Текущий ключ будет утерян, если Вы предварительно не сохранили его.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showChangeKeyConfirm = false
+                        onLogout()
+                    },
+                ) {
+                    Text("Продолжить")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showChangeKeyConfirm = false }) {
+                    Text("Отмена")
+                }
+            },
+        )
     }
 }
 
@@ -313,4 +360,19 @@ private fun formatUsageDate(raw: String): String {
             }
         }
     }.getOrDefault(raw)
+}
+
+private fun remainingPeriodText(periodEndRaw: String): String? {
+    val periodEnd = runCatching { OffsetDateTime.parse(periodEndRaw) }.getOrNull() ?: return null
+    val remaining = ChronoUnit.MINUTES.between(OffsetDateTime.now(), periodEnd)
+    if (remaining <= 0) {
+        return "Период истёк"
+    }
+    val days = remaining / (60 * 24)
+    val hours = remaining / 60
+    return when {
+        days >= 1 -> "Осталось дней: $days"
+        hours >= 1 -> "Осталось часов: $hours"
+        else -> "Осталось минут: $remaining"
+    }
 }

@@ -75,6 +75,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var hiddenForCapture = false
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
     private val fabErrorPulse = MutableStateFlow(0)
+    private val fabErrorMessage = MutableStateFlow<String?>(null)
+    private var fabErrorHideJob: Job? = null
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -120,6 +122,11 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             ACTION_HIDE_FOR_CAPTURE -> setHiddenForCapture(true)
             ACTION_RESTORE_AFTER_CAPTURE -> setHiddenForCapture(false)
             ACTION_CAPTURE -> startCaptureAfterHidingOverlay()
+            ACTION_ACCESS_DENIED -> {
+                val message = intent.getStringExtra(EXTRA_ACCESS_DENIED_MESSAGE)
+                    ?: AppAlertNotifier.DEFAULT_API_KEY_MESSAGE
+                signalFabAccessDenied(message)
+            }
             ACTION_STOP -> stopSelf()
         }
         return START_STICKY
@@ -185,7 +192,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     @Composable
     private fun FloatingActionButtonContent() {
         val errorPulse by fabErrorPulse.collectAsState()
-        OverlayFab(errorPulse = errorPulse)
+        val errorMessage by fabErrorMessage.collectAsState()
+        OverlayFab(errorPulse = errorPulse, errorMessage = errorMessage)
     }
 
     @Composable
@@ -228,8 +236,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         scope.launch {
             when (val access = CaptureAccessGuard.check(XvmBlitzApp.instance.container)) {
                 is CaptureAccessResult.Denied -> {
-                    signalFabAccessDenied()
-                    AppAlertNotifier.showApiKeyRequired(this@OverlayService, access.message)
+                    signalFabAccessDenied(access.message)
                     return@launch
                 }
                 CaptureAccessResult.Allowed -> Unit
@@ -240,9 +247,18 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
     }
 
-    private fun signalFabAccessDenied() {
+    private fun signalFabAccessDenied(message: String) {
         fabErrorPulse.value = fabErrorPulse.value + 1
+        fabErrorMessage.value = message
         vibrateError()
+        fabErrorHideJob?.cancel()
+        fabErrorHideJob = scope.launch {
+            delay(2_800)
+            fabErrorMessage.value = null
+        }
+        setHiddenForCapture(false)
+        renderPanels()
+        captureButtonView?.visibility = android.view.View.VISIBLE
     }
 
     private fun vibrateError() {
@@ -683,7 +699,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         const val ACTION_CAPTURE = "ru.xvmblitz.android.overlay.CAPTURE"
         const val ACTION_HIDE_FOR_CAPTURE = "ru.xvmblitz.android.overlay.HIDE_FOR_CAPTURE"
         const val ACTION_RESTORE_AFTER_CAPTURE = "ru.xvmblitz.android.overlay.RESTORE_AFTER_CAPTURE"
+        const val ACTION_ACCESS_DENIED = "ru.xvmblitz.android.overlay.ACCESS_DENIED"
         const val ACTION_STOP = "ru.xvmblitz.android.overlay.STOP"
+        const val EXTRA_ACCESS_DENIED_MESSAGE = "access_denied_message"
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
@@ -705,6 +723,15 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         fun restoreAfterCapture(context: Context) {
             context.startService(
                 Intent(context, OverlayService::class.java).setAction(ACTION_RESTORE_AFTER_CAPTURE),
+            )
+        }
+
+        fun showAccessDenied(context: Context, message: String) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, OverlayService::class.java)
+                    .setAction(ACTION_ACCESS_DENIED)
+                    .putExtra(EXTRA_ACCESS_DENIED_MESSAGE, message),
             )
         }
 

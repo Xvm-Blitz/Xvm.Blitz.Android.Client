@@ -2,7 +2,7 @@ package ru.xvmblitz.android.overlay
 
 import androidx.compose.ui.graphics.Color
 
-val OverlayTableBackground = Color(0x99000000)
+val OverlayTableBackground = Color(0x80000000)
 
 fun winRateColor(winRate: Double?): Color {
     val value = winRate ?: return Color(0xFF333333)

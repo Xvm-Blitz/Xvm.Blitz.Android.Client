@@ -16,7 +16,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
@@ -55,7 +59,8 @@ fun OverlayPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(OverlayTableBackground, RoundedCornerShape(cornerRadius))
+                .clip(RoundedCornerShape(cornerRadius))
+                .background(OverlayTableBackground)
                 .padding(horizontal = contentPaddingX, vertical = contentPaddingY),
             verticalArrangement = Arrangement.spacedBy(rowSpacing),
         ) {
@@ -180,10 +185,17 @@ private fun PlayerRow(
     val cellSpacing = (8f * scaleX).dp
     val columnWeights = if (mirroredColumns) OverlayEnemiesColumnWeights else OverlayAlliesColumnWeights
     val cells = playerRowCells(player, mirroredColumns)
+    val cellCorner = (4f * minOf(scaleX, scaleY)).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(OverlayTableBackground, RoundedCornerShape((4f * minOf(scaleX, scaleY)).dp))
+            .drawBehind {
+                drawRoundRect(
+                    color = OverlayTableBackground,
+                    cornerRadius = CornerRadius(cellCorner.toPx(), cellCorner.toPx()),
+                    blendMode = BlendMode.Src,
+                )
+            }
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(cellSpacing),
         verticalAlignment = Alignment.CenterVertically,

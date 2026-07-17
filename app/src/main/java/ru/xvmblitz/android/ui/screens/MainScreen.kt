@@ -1,5 +1,7 @@
 package ru.xvmblitz.android.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -23,14 +26,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import ru.xvmblitz.android.ui.MainUiState
 
 @Composable
@@ -182,9 +188,10 @@ fun MainScreen(
                     onXChange = { alliesXText = it.filter(Char::isDigit).take(5) },
                     onYChange = { alliesYText = it.filter(Char::isDigit).take(5) },
                     onApply = {
-                        val x = alliesXText.toIntOrNull() ?: return@CoordinateRow
-                        val y = alliesYText.toIntOrNull() ?: return@CoordinateRow
+                        val x = alliesXText.toIntOrNull() ?: return@CoordinateRow false
+                        val y = alliesYText.toIntOrNull() ?: return@CoordinateRow false
                         onUpdateAlliesPosition(x, y)
+                        true
                     },
                 )
 
@@ -195,9 +202,10 @@ fun MainScreen(
                     onXChange = { enemiesXText = it.filter(Char::isDigit).take(5) },
                     onYChange = { enemiesYText = it.filter(Char::isDigit).take(5) },
                     onApply = {
-                        val x = enemiesXText.toIntOrNull() ?: return@CoordinateRow
-                        val y = enemiesYText.toIntOrNull() ?: return@CoordinateRow
+                        val x = enemiesXText.toIntOrNull() ?: return@CoordinateRow false
+                        val y = enemiesYText.toIntOrNull() ?: return@CoordinateRow false
                         onUpdateEnemiesPosition(x, y)
+                        true
                     },
                 )
             }
@@ -213,8 +221,23 @@ private fun CoordinateRow(
     yText: String,
     onXChange: (String) -> Unit,
     onYChange: (String) -> Unit,
-    onApply: () -> Unit,
+    onApply: () -> Boolean,
 ) {
+    var savedPulse by remember { mutableIntStateOf(0) }
+    var showSaved by remember { mutableStateOf(false) }
+    val checkScale by animateFloatAsState(
+        targetValue = if (showSaved) 1f else 0.85f,
+        animationSpec = tween(220),
+        label = "saved-scale",
+    )
+
+    LaunchedEffect(savedPulse) {
+        if (savedPulse <= 0) return@LaunchedEffect
+        showSaved = true
+        delay(1_400)
+        showSaved = false
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -238,11 +261,25 @@ private fun CoordinateRow(
                 modifier = Modifier.weight(1f),
             )
         }
-        OutlinedButton(
-            onClick = onApply,
+        Button(
+            onClick = {
+                if (onApply()) {
+                    savedPulse += 1
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
+            colors = if (showSaved) {
+                ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                )
+            } else {
+                ButtonDefaults.buttonColors()
+            },
         ) {
-            Text("Применить")
+            Text(
+                text = if (showSaved) "Сохранено" else "Применить",
+                modifier = Modifier.scale(checkScale),
+            )
         }
     }
 }

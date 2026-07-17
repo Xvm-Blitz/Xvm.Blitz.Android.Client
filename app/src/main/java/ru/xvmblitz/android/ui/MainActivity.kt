@@ -15,15 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.MutableStateFlow
 import ru.xvmblitz.android.XvmBlitzApp
@@ -49,9 +45,6 @@ class MainActivity : ComponentActivity() {
                     )
                     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
                     val incomingIntent by incomingIntents.collectAsStateWithLifecycle()
-                    val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentRoute = navBackStackEntry?.destination?.route
-                    var guideVisible by remember { mutableStateOf(false) }
 
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission(),
@@ -70,12 +63,8 @@ class MainActivity : ComponentActivity() {
                         OverlayService.start(this@MainActivity)
                     }
 
-                    val forceLandscape = uiState.settings.configMode ||
-                        currentRoute == Routes.Guide ||
-                        guideVisible
-
-                    LaunchedEffect(forceLandscape) {
-                        requestedOrientation = if (forceLandscape) {
+                    LaunchedEffect(uiState.settings.configMode) {
+                        requestedOrientation = if (uiState.settings.configMode) {
                             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         } else {
                             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -88,7 +77,6 @@ class MainActivity : ComponentActivity() {
                         }
                         val settings = container.settingsRepository.current()
                         if (!settings.guideCompleted) {
-                            guideVisible = true
                             navController.navigate(Routes.Guide) {
                                 launchSingleTop = true
                             }
@@ -132,7 +120,6 @@ class MainActivity : ComponentActivity() {
                                 onUpdateAlliesPosition = mainViewModel::updateAlliesPosition,
                                 onUpdateEnemiesPosition = mainViewModel::updateEnemiesPosition,
                                 onOpenGuide = {
-                                    guideVisible = true
                                     navController.navigate(Routes.Guide) {
                                         launchSingleTop = true
                                     }
@@ -143,12 +130,10 @@ class MainActivity : ComponentActivity() {
                             GuideScreen(
                                 onBack = {
                                     mainViewModel.setGuideCompleted(true)
-                                    guideVisible = false
                                     navController.popBackStack()
                                 },
                                 onFinished = {
                                     mainViewModel.setGuideCompleted(true)
-                                    guideVisible = false
                                     navController.popBackStack()
                                 },
                             )

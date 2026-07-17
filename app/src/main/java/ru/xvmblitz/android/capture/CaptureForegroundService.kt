@@ -117,7 +117,7 @@ class CaptureForegroundService : Service() {
     }
 
     private suspend fun notifyAccessDenied(message: String) {
-        AppAlertNotifier.showApiKeyRequired(applicationContext, message)
+        OverlayService.showAccessDenied(applicationContext, message)
         OverlayService.restoreAfterCapture(applicationContext)
         CaptureEvents.emit(CaptureEvents.Result.Error(message))
     }

@@ -137,17 +137,23 @@ class MainViewModel(
 
                 usageLoading.value = true
                 usageError.value = null
-                val usage = container.usageApi.getUsage(trimmed)
                 if (!container.authRepository.saveApiKey(trimmed)) {
                     onResult(Result.failure(IllegalArgumentException("Ключ не может быть пустым")))
                     return@launch
                 }
-                usageState.value = usage
                 onResult(Result.success(Unit))
+                val usage = container.usageApi.getUsage(trimmed)
+                usageState.value = usage
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
-                onResult(Result.failure(exception))
+                if (container.authRepository.isAuthorized) {
+                    usageState.value = null
+                    usageError.value = exception.message ?: "Не удалось получить квоту"
+                    onResult(Result.success(Unit))
+                } else {
+                    onResult(Result.failure(exception))
+                }
             } finally {
                 usageLoading.value = false
             }

@@ -1,5 +1,6 @@
 package ru.xvmblitz.android.ui.screens
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
@@ -15,6 +16,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,8 +29,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -44,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +63,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -73,6 +81,7 @@ private data class GuideStep(
 
 private enum class GuideIllustration {
     Auth,
+    GameFiles,
     Fab,
     Capture,
     Panels,
@@ -87,6 +96,16 @@ private val GuideSteps = listOf(
         title = "Авторизация",
         description = "Откройте «Профиль» / «Войти» и введите API‑ключ. После входа можно смотреть квоту и сменить ключ.",
         illustration = GuideIllustration.Auth,
+    ),
+    GuideStep(
+        title = "Файлы в каталоге игры",
+        description = "Без замены файлов распознавание работает крайне некорректно. " +
+            "Откройте Android/data/com.tanksblitz/files/packs/ (создайте папки, если их нет): " +
+            "UI/Screens3 → Font.style.dvpl; " +
+            "UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl; " +
+            "Fonts → Jost-Light.ttf.dvpl. " +
+            "Иногда надписи в интерфейсе игры могут отображаться некорректно.",
+        illustration = GuideIllustration.GameFiles,
     ),
     GuideStep(
         title = "Кнопка поверх игры",
@@ -133,12 +152,41 @@ fun GuideScreen(
 ) {
     BackHandler(onBack = onBack)
     var stepIndex by remember { mutableIntStateOf(0) }
+    var goingForward by remember { mutableStateOf(true) }
     val step = GuideSteps[stepIndex]
     val isLast = stepIndex == GuideSteps.lastIndex
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 56.dp.toPx() }
+
+    fun goNext() {
+        if (isLast) {
+            onFinished()
+        } else {
+            goingForward = true
+            stepIndex += 1
+        }
+    }
+
+    fun goPrevious() {
+        if (stepIndex == 0) {
+            onBack()
+        } else {
+            goingForward = false
+            stepIndex -= 1
+        }
+    }
 
     LaunchedEffect(stepIndex) {
-        delay(5200)
+        val dwellMs = if (GuideSteps[stepIndex].illustration == GuideIllustration.GameFiles) {
+            9_000L
+        } else {
+            5_200L
+        }
+        delay(dwellMs)
         if (stepIndex < GuideSteps.lastIndex) {
+            goingForward = true
             stepIndex += 1
         }
     }
@@ -188,48 +236,84 @@ fun GuideScreen(
             AnimatedContent(
                 targetState = step,
                 transitionSpec = {
-                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith
-                        (slideOutHorizontally { -it / 3 } + fadeOut())
+                    if (goingForward) {
+                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith
+                            (slideOutHorizontally { -it / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
+                            (slideOutHorizontally { it / 3 } + fadeOut())
+                    }
                 },
                 label = "guide-step",
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .pointerInput(stepIndex, isLast) {
+                        var totalDrag = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { totalDrag = 0f },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                totalDrag += dragAmount
+                            },
+                            onDragEnd = {
+                                when {
+                                    totalDrag <= -swipeThresholdPx -> goNext()
+                                    totalDrag >= swipeThresholdPx -> goPrevious()
+                                }
+                            },
+                            onDragCancel = { totalDrag = 0f },
+                        )
+                    },
             ) { current ->
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LandscapePhoneFrame(
-                        modifier = Modifier
-                            .weight(1.35f)
-                            .fillMaxSize(),
+                if (isLandscape) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        GuideIllustrationBox(
-                            illustration = current.illustration,
-                            modifier = Modifier.fillMaxSize(),
+                        LandscapePhoneFrame(
+                            modifier = Modifier
+                                .weight(1.35f)
+                                .fillMaxSize(),
+                        ) {
+                            GuideIllustrationBox(
+                                illustration = current.illustration,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        GuideStepText(
+                            title = current.title,
+                            description = current.description,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize(),
+                            textAlign = TextAlign.Start,
                         )
                     }
+                } else {
                     Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxSize(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.Start,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(
-                            text = current.title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Start,
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = current.description,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-                            textAlign = TextAlign.Start,
+                        LandscapePhoneFrame(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1.15f),
+                        ) {
+                            GuideIllustrationBox(
+                                illustration = current.illustration,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        GuideStepText(
+                            title = current.title,
+                            description = current.description,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
@@ -240,23 +324,53 @@ fun GuideScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OutlinedButton(
-                    onClick = {
-                        if (stepIndex == 0) onBack() else stepIndex -= 1
-                    },
+                    onClick = ::goPrevious,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(if (stepIndex == 0) "Закрыть" else "Назад")
                 }
                 Button(
-                    onClick = {
-                        if (isLast) onFinished() else stepIndex += 1
-                    },
+                    onClick = ::goNext,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(if (isLast) "Готово" else "Далее")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GuideStepText(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign,
+) {
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = if (textAlign == TextAlign.Center) {
+            Alignment.CenterHorizontally
+        } else {
+            Alignment.Start
+        },
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -307,6 +421,7 @@ private fun GuideIllustrationBox(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (illustration) {
             GuideIllustration.Auth -> AuthIllustration()
+            GuideIllustration.GameFiles -> GameFilesIllustration()
             GuideIllustration.Fab -> FabIllustration()
             GuideIllustration.Capture -> CaptureIllustration()
             GuideIllustration.Panels -> PanelsIllustration()
@@ -315,6 +430,55 @@ private fun GuideIllustrationBox(
             GuideIllustration.ConfigResize -> ConfigResizeIllustration()
             GuideIllustration.Updates -> UpdatesIllustration()
         }
+    }
+}
+
+@Composable
+private fun GameFilesIllustration() {
+    val pulse by rememberInfiniteTransition(label = "files").animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
+        label = "files-pulse",
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .scale(pulse),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+    ) {
+        Text(
+            text = "packs/",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+        )
+        GameFilePathRow("UI/Screens3/", "Font.style.dvpl")
+        GameFilePathRow("UI/Screens/Battle/", "BattleLoadingScreen.yaml.dvpl")
+        GameFilePathRow("Fonts/", "Jost-Light.ttf.dvpl")
+        Text(
+            text = "Без файлов распознавание почти не работает",
+            color = MaterialTheme.colorScheme.error,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun GameFilePathRow(folder: String, file: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(folder, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), fontSize = 10.sp)
+        Text(file, color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -496,7 +660,7 @@ private fun MiniPanel(modifier: Modifier = Modifier, mirrored: Boolean) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(OverlayTableBackground, RoundedCornerShape(4.dp))
+                    .background(Color.Transparent, RoundedCornerShape(4.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {

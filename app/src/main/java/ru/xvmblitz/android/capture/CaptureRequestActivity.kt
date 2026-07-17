@@ -13,7 +13,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.overlay.OverlayService
-import ru.xvmblitz.android.util.AppAlertNotifier
 import ru.xvmblitz.android.util.CaptureAccessGuard
 import ru.xvmblitz.android.util.CaptureAccessResult
 
@@ -36,7 +35,7 @@ class CaptureRequestActivity : ComponentActivity() {
         lifecycleScope.launch {
             when (val access = CaptureAccessGuard.check(XvmBlitzApp.instance.container)) {
                 is CaptureAccessResult.Denied -> {
-                    AppAlertNotifier.showApiKeyRequired(this@CaptureRequestActivity, access.message)
+                    OverlayService.showAccessDenied(this@CaptureRequestActivity, access.message)
                     OverlayService.restoreAfterCapture(this@CaptureRequestActivity)
                     finish()
                     return@launch
