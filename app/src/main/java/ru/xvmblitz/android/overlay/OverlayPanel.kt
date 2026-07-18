@@ -52,6 +52,7 @@ fun OverlayPanel(
     val fontScale = fontSizeSp / OverlayBaseFontSizeSp
     val panelWidth = (OverlayBasePanelWidthDp * widthScale * fontScale).dp
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
+    val contentPadding = OverlayPanelContentPaddingDp.dp
     val rowSpacing = with(density) { OverlayRowSpacingPx.toDp() }
     val digitWidthDp = fontSizeSp * 0.62f
     val winRateColumnWidth = (digitWidthDp * OverlayWinRateColumnChars).dp
@@ -62,7 +63,8 @@ fun OverlayPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(cornerRadius))
-                .background(OverlayTableBackground),
+                .background(OverlayTableBackground)
+                .padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(rowSpacing),
         ) {
             players.forEach { player ->
@@ -204,16 +206,16 @@ private fun PlayerRow(
         if (mirroredColumns) {
             CompactCell(
                 text = cells[0],
-                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.End),
+                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.Start),
                 modifier = Modifier.width(winRateColumnWidth),
                 color = if (player.isMissing) Color.White else winRateColor(player.winRate),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
             )
             CompactCell(
                 text = cells[1],
-                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                textStyle = textStyle.copy(textAlign = TextAlign.Start),
                 modifier = Modifier.width(battlesColumnWidth),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
             )
             CompactCell(
                 text = cells[2],
@@ -236,22 +238,22 @@ private fun PlayerRow(
             )
             CompactCell(
                 text = cells[1],
-                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                textStyle = textStyle.copy(textAlign = TextAlign.Start),
                 modifier = Modifier.weight(1.2f),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
             )
             CompactCell(
                 text = cells[2],
-                textStyle = textStyle.copy(textAlign = TextAlign.End),
+                textStyle = textStyle.copy(textAlign = TextAlign.Start),
                 modifier = Modifier.width(battlesColumnWidth),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
             )
             CompactCell(
                 text = cells[3],
-                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.Start),
+                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.End),
                 modifier = Modifier.width(winRateColumnWidth),
                 color = if (player.isMissing) Color.White else winRateColor(player.winRate),
-                textAlign = TextAlign.Start,
+                textAlign = TextAlign.End,
             )
         }
     }

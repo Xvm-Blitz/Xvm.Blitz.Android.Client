@@ -35,3 +35,4 @@ fun overlayFontSizeSp(scaleY: Float): Float {
 }
 
 const val OverlayRowSpacingPx = 5
+const val OverlayPanelContentPaddingDp = 2f
