@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,8 +68,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -78,8 +83,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
@@ -760,55 +768,108 @@ private fun GameFilesIllustration() {
         animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
         label = "files-pulse",
     )
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .padding(8.dp),
+            .clip(RoundedCornerShape(12.dp))
+            .padding(6.dp),
         contentAlignment = Alignment.Center,
     ) {
+        val compact = maxHeight < 220.dp
+        val spacing = if (compact) 2.dp else 5.dp
+        val rowPaddingV = if (compact) 2.dp else 5.dp
+        val headerSize = if (compact) 9.sp else 11.sp
+        val pathSize = if (compact) 7.sp else 9.sp
+        val warningSize = if (compact) 7.sp else 9.sp
+        val warningLineHeight = if (compact) 9.sp else 11.sp
+        var contentHeightPx by remember { mutableIntStateOf(0) }
+        val maxHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val fitScale = if (contentHeightPx > 0) {
+            (maxHeightPx / contentHeightPx).coerceIn(0.55f, 1f)
+        } else {
+            1f
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .scale(pulse),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+                .wrapContentHeight(unbounded = true)
+                .onSizeChanged { size -> contentHeightPx = size.height }
+                .graphicsLayer {
+                    val scale = pulse * fitScale
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin.Center
+                },
+            verticalArrangement = Arrangement.spacedBy(spacing),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = "packs/",
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
+                fontSize = headerSize,
+                maxLines = 1,
             )
-            GameFilePathRow("UI/Screens3/", "Font.style.dvpl")
-            GameFilePathRow("UI/Screens/Battle/", "BattleLoadingScreen.yaml.dvpl")
-            GameFilePathRow("Fonts/", "Jost-Light.ttf.dvpl")
+            GameFilePathRow(
+                folder = "UI/Screens3/",
+                file = "Font.style.dvpl",
+                fontSize = pathSize,
+                verticalPadding = rowPaddingV,
+            )
+            GameFilePathRow(
+                folder = "UI/Screens/Battle/",
+                file = "BattleLoadingScreen.yaml.dvpl",
+                fontSize = pathSize,
+                verticalPadding = rowPaddingV,
+            )
+            GameFilePathRow(
+                folder = "Fonts/",
+                file = "Jost-Light.ttf.dvpl",
+                fontSize = pathSize,
+                verticalPadding = rowPaddingV,
+            )
             Text(
                 text = "Без замены файлов получение статистики работает нестабильно",
                 color = MaterialTheme.colorScheme.error,
-                fontSize = 9.sp,
+                fontSize = warningSize,
                 fontWeight = FontWeight.Medium,
-                lineHeight = 11.sp,
+                lineHeight = warningLineHeight,
+                maxLines = if (compact) 2 else 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
 @Composable
-private fun GameFilePathRow(folder: String, file: String) {
+private fun GameFilePathRow(
+    folder: String,
+    file: String,
+    fontSize: TextUnit = 9.sp,
+    verticalPadding: Dp = 5.dp,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = 8.dp, vertical = verticalPadding),
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
-        Text(folder, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), fontSize = 9.sp)
+        Text(
+            folder,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            fontSize = fontSize,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Text(
             file,
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 9.sp,
+            fontSize = fontSize,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

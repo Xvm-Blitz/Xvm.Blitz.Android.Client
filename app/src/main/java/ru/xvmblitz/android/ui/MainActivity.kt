@@ -124,6 +124,10 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onCloseApp = {
+                                    OverlayService.stop(this@MainActivity)
+                                    finishAffinity()
+                                },
                             )
                         }
                         composable(Routes.Guide) {

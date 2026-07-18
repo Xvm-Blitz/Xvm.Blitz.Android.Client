@@ -334,18 +334,21 @@ private fun AuthorizedQuotaContent(
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        showChangeKeyConfirm = false
-                        onLogout()
-                    },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("Продолжить")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showChangeKeyConfirm = false }) {
-                    Text("Отмена")
+                    OutlinedButton(onClick = { showChangeKeyConfirm = false }) {
+                        Text("Отмена")
+                    }
+                    Button(
+                        onClick = {
+                            showChangeKeyConfirm = false
+                            onLogout()
+                        },
+                    ) {
+                        Text("Продолжить")
+                    }
                 }
             },
         )

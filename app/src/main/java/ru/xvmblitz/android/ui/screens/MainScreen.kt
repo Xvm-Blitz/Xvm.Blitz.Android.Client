@@ -3,6 +3,7 @@ package ru.xvmblitz.android.ui.screens
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,9 +35,11 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,6 +60,7 @@ fun MainScreen(
     onUpdateAlliesPosition: (Int, Int) -> Unit,
     onUpdateEnemiesPosition: (Int, Int) -> Unit,
     onOpenGuide: () -> Unit,
+    onCloseApp: () -> Unit,
 ) {
     var alliesXText by remember { mutableStateOf(state.settings.alliesX.toString()) }
     var alliesYText by remember { mutableStateOf(state.settings.alliesY.toString()) }
@@ -64,6 +68,7 @@ fun MainScreen(
     var enemiesYText by remember { mutableStateOf(state.settings.enemiesY.toString()) }
     val scrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     val configuration = LocalConfiguration.current
+    val focusManager = LocalFocusManager.current
     var configToggleScreenY by remember { mutableFloatStateOf(0f) }
     var preserveConfigToggleScreenY by remember { mutableStateOf<Float?>(null) }
 
@@ -106,6 +111,9 @@ fun MainScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { focusManager.clearFocus() })
+            }
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -254,6 +262,12 @@ fun MainScreen(
                 )
             }
         }
+
+        AdaptiveOutlinedButton(
+            text = "Закрыть приложение",
+            onClick = onCloseApp,
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
     }
