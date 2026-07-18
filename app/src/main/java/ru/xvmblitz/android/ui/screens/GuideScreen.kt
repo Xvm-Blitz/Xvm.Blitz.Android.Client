@@ -98,6 +98,7 @@ private data class GuideStep(
 
 private enum class GuideIllustration {
     Auth,
+    OverlayPermission,
     GameFiles,
     Fab,
     Capture,
@@ -115,6 +116,11 @@ private val GuideSteps = listOf(
         illustration = GuideIllustration.Auth,
     ),
     GuideStep(
+        title = "Поверх других приложений",
+        description = "Обязательно разрешите отображение поверх других приложений. Без этого кнопка «Статистика» и панели оверлея не будут отображаться нормально.",
+        illustration = GuideIllustration.OverlayPermission,
+    ),
+    GuideStep(
         title = "Файлы в каталоге игры",
         description = """
             Без замены файлов распознавание работает крайне некорректно.
@@ -122,7 +128,7 @@ private val GuideSteps = listOf(
             UI/Screens3 → Font.style.dvpl
             UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl
             Fonts → Jost-Light.ttf.dvpl
-            Иногда надписи в интерфейсе игры могут отображаться некорректно.
+            С замененным шрифтом некоторые надписи в интерфейсе игры могут отображаться некорректно.
         """.trimIndent(),
         illustration = GuideIllustration.GameFiles,
     ),
@@ -504,7 +510,7 @@ private fun GameFilesDescription(
                 append("UI/Screens3 → Font.style.dvpl\n")
                 append("UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl\n")
                 append("Fonts → Jost-Light.ttf.dvpl\n")
-                append("Иногда надписи в интерфейсе игры могут отображаться некорректно.")
+                append("С замененным шрифтом некоторые надписи в интерфейсе игры могут отображаться некорректно.")
             }
         }
     }
@@ -565,6 +571,7 @@ private fun GuideIllustrationBox(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (illustration) {
             GuideIllustration.Auth -> AuthIllustration()
+            GuideIllustration.OverlayPermission -> OverlayPermissionIllustration()
             GuideIllustration.GameFiles -> GameFilesIllustration()
             GuideIllustration.Fab -> FabIllustration()
             GuideIllustration.Capture -> CaptureIllustration()
@@ -663,6 +670,65 @@ private fun AuthIllustration() {
         ) {
             Text("Войти", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)
         }
+    }
+}
+
+@Composable
+private fun OverlayPermissionIllustration() {
+    val pulse by rememberInfiniteTransition(label = "overlay-permission").animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse),
+        label = "overlay-permission-pulse",
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .scale(pulse)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+                .padding(horizontal = 14.dp, vertical = 16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Разрешить отображение поверх других приложений?",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        Text(
+                            text = "Разрешить",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            text = "Без разрешения оверлей не отображается",
+            color = MaterialTheme.colorScheme.error,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

@@ -14,10 +14,6 @@ internal object GitHubReleaseDownloader {
         isLenient = true
     }
 
-    private val BrowserDownloadUrlRegex =
-        Regex(
-            """^https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/?#]+)$""",
-        )
     private val ApiAssetUrlRegex =
         Regex(
             """^https://api\.github\.com/repos/([^/]+)/([^/]+)/releases/assets/(\d+)$""",
@@ -30,7 +26,7 @@ internal object GitHubReleaseDownloader {
         if (!response.isSuccessful) {
             val code = response.code
             response.close()
-            error(buildErrorMessage(downloadUrl, resolvedUrl, code))
+            error(buildErrorMessage(code))
         }
 
         val contentType = response.header("Content-Type").orEmpty()
@@ -38,63 +34,40 @@ internal object GitHubReleaseDownloader {
             val preview = response.body?.string().orEmpty().take(180)
             response.close()
             error(
-                "GitHub вернул JSON вместо APK. Для api.github.com нужен " +
-                    "Accept: application/octet-stream и RELEASE_DOWNLOAD_TOKEN. $preview",
+                "GitHub вернул JSON вместо APK. Проверьте download_url релиза. $preview",
             )
         }
         return response
     }
 
     private fun resolveDownloadUrl(httpClient: OkHttpClient, downloadUrl: String): String {
-        if (ApiAssetUrlRegex.matches(downloadUrl)) {
-            requireToken("API asset URL")
+        if (!ApiAssetUrlRegex.matches(downloadUrl)) {
             return downloadUrl
         }
-
-        val browserMatch = BrowserDownloadUrlRegex.matchEntire(downloadUrl) ?: return downloadUrl
-        val token = BuildConfig.RELEASE_DOWNLOAD_TOKEN
-        if (token.isBlank()) {
-            return downloadUrl
-        }
-
-        val owner = browserMatch.groupValues[1]
-        val repo = browserMatch.groupValues[2]
-        val tag = browserMatch.groupValues[3]
-        val assetName = browserMatch.groupValues[4]
-        return resolveApiAssetUrl(httpClient, owner, repo, tag, assetName, token)
+        return toPublicBrowserUrl(httpClient, downloadUrl) ?: downloadUrl
     }
 
-    private fun resolveApiAssetUrl(
-        httpClient: OkHttpClient,
-        owner: String,
-        repo: String,
-        tag: String,
-        assetName: String,
-        token: String,
-    ): String {
-        val releaseRequest = Request.Builder()
-            .url("https://api.github.com/repos/$owner/$repo/releases/tags/$tag")
+    private fun toPublicBrowserUrl(httpClient: OkHttpClient, apiAssetUrl: String): String? {
+        val match = ApiAssetUrlRegex.matchEntire(apiAssetUrl) ?: return null
+        val owner = match.groupValues[1]
+        val repo = match.groupValues[2]
+        val assetId = match.groupValues[3]
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/releases/assets/$assetId")
             .header("Accept", "application/vnd.github+json")
-            .header("Authorization", "Bearer $token")
             .header("User-Agent", "XvmBlitz-Android/${BuildConfig.VERSION_NAME}")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .build()
-
-        httpClient.newCall(releaseRequest).execute().use { response ->
-            if (!response.isSuccessful) {
-                error(
-                    "Не удалось получить данные релиза GitHub: HTTP ${response.code}. " +
-                        "Проверьте RELEASE_DOWNLOAD_TOKEN.",
-                )
+        return runCatching {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@use null
+                }
+                val body = response.body?.string().orEmpty()
+                val asset = json.decodeFromString<GitHubAssetDto>(body)
+                asset.browserDownloadUrl.takeIf { url -> url.isNotBlank() }
             }
-            val body = response.body?.string().orEmpty()
-            val release = json.decodeFromString<GitHubReleaseDto>(body)
-            return release.assets
-                .firstOrNull { asset -> asset.name == assetName }
-                ?.url
-                ?.takeIf { url -> url.isNotBlank() }
-                ?: error("Asset $assetName не найден в релизе $tag")
-        }
+        }.getOrNull()
     }
 
     private fun buildDownloadRequest(downloadUrl: String): Request {
@@ -103,9 +76,7 @@ internal object GitHubReleaseDownloader {
             .header("User-Agent", "XvmBlitz-Android/${BuildConfig.VERSION_NAME}")
 
         if (isGitHubApiAssetUrl(downloadUrl)) {
-            requireToken("API asset download")
             builder.header("Accept", "application/octet-stream")
-            builder.header("Authorization", "Bearer ${BuildConfig.RELEASE_DOWNLOAD_TOKEN}")
             builder.header("X-GitHub-Api-Version", "2022-11-28")
         } else {
             builder.header("Accept", "*/*")
@@ -119,36 +90,12 @@ internal object GitHubReleaseDownloader {
             downloadUrl.startsWith("https://api.github.com/repos/")
     }
 
-    private fun requireToken(reason: String) {
-        if (BuildConfig.RELEASE_DOWNLOAD_TOKEN.isBlank()) {
-            error(
-                "Для $reason из приватного GitHub нужен RELEASE_DOWNLOAD_TOKEN " +
-                    "(или публичный URL релиза).",
-            )
-        }
+    private fun buildErrorMessage(code: Int): String {
+        return "Не удалось скачать обновление: HTTP $code"
     }
-
-    private fun buildErrorMessage(originalUrl: String, resolvedUrl: String, code: Int): String {
-        if (code != 404) {
-            return "Не удалось скачать обновление: HTTP $code"
-        }
-        val isGitHub = originalUrl.contains("github.com") || resolvedUrl.contains("github.com")
-        if (isGitHub) {
-            return "Не удалось скачать обновление: HTTP 404. " +
-                "Репозиторий приватный — прямая ссылка GitHub не работает из приложения. " +
-                "Нужен публичный URL релиза или RELEASE_DOWNLOAD_TOKEN."
-        }
-        return "Не удалось скачать обновление: HTTP 404"
-    }
-
-    @Serializable
-    private data class GitHubReleaseDto(
-        @SerialName("assets") val assets: List<GitHubAssetDto> = emptyList(),
-    )
 
     @Serializable
     private data class GitHubAssetDto(
-        @SerialName("name") val name: String = "",
-        @SerialName("url") val url: String = "",
+        @SerialName("browser_download_url") val browserDownloadUrl: String = "",
     )
 }

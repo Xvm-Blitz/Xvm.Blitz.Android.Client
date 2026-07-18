@@ -136,8 +136,6 @@ jobs:
           fi
 
       - name: Build production APK
-        env:
-          RELEASE_DOWNLOAD_TOKEN: ${{ secrets.RELEASE_DOWNLOAD_TOKEN }}
         run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Unit tests
@@ -251,20 +249,11 @@ jobs:
 
             download_url="https://github.com/${PUBLIC_RELEASES_REPO}/releases/download/${tag}/${apk_name}"
           else
-            asset_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
-              --jq ".assets[] | select(.name==\"${apk_name}\") | .url")"
-
-            if [[ -n "${asset_url}" ]]; then
-              download_url="${asset_url}"
-              echo "WARNING: Registered private GitHub API asset URL."
-              echo "Clients need secret RELEASE_DOWNLOAD_TOKEN, or set PUBLIC_RELEASES_REPO for a public mirror."
-            else
-              if [[ -z "${RELEASE_DOWNLOAD_BASE_URL}" ]]; then
-                echo "Unable to resolve release asset URL and RELEASE_DOWNLOAD_BASE_URL is empty." >&2
-                exit 1
-              fi
+            if [[ -n "${RELEASE_DOWNLOAD_BASE_URL}" ]]; then
               base_url="${RELEASE_DOWNLOAD_BASE_URL%/}"
               download_url="${base_url}/releases/download/${tag}/${apk_name}"
+            else
+              download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${apk_name}"
             fi
           fi
 

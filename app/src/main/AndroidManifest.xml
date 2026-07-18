@@ -34,6 +34,7 @@
 
         <activity
             android:name=".ui.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/Theme.XvmBlitz"
@@ -50,7 +51,9 @@
             android:exported="false"
             android:theme="@style/Theme.XvmBlitz.Transparent"
             android:taskAffinity=""
-            android:launchMode="singleTask" />
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
 
         <service
             android:name=".overlay.OverlayService"

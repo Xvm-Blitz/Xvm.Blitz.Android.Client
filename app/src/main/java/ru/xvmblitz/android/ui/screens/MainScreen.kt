@@ -2,6 +2,7 @@ package ru.xvmblitz.android.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
@@ -24,16 +24,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import ru.xvmblitz.android.ui.MainUiState
 import ru.xvmblitz.android.ui.components.AdaptiveButton
@@ -55,6 +62,10 @@ fun MainScreen(
     var alliesYText by remember { mutableStateOf(state.settings.alliesY.toString()) }
     var enemiesXText by remember { mutableStateOf(state.settings.enemiesX.toString()) }
     var enemiesYText by remember { mutableStateOf(state.settings.enemiesY.toString()) }
+    val scrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
+    val configuration = LocalConfiguration.current
+    var configToggleScreenY by remember { mutableFloatStateOf(0f) }
+    var preserveConfigToggleScreenY by remember { mutableStateOf<Float?>(null) }
 
     LaunchedEffect(
         state.settings.alliesX,
@@ -68,10 +79,33 @@ fun MainScreen(
         enemiesYText = state.settings.enemiesY.toString()
     }
 
+    suspend fun restoreConfigToggleScreenY() {
+        val targetScreenY = preserveConfigToggleScreenY ?: return
+        withFrameNanos { }
+        withFrameNanos { }
+        val delta = (configToggleScreenY - targetScreenY).roundToInt()
+        if (delta != 0) {
+            scrollState.scrollTo((scrollState.value + delta).coerceAtLeast(0))
+        }
+        preserveConfigToggleScreenY = null
+    }
+
+    LaunchedEffect(configuration.orientation) {
+        restoreConfigToggleScreenY()
+    }
+
+    LaunchedEffect(state.settings.configMode) {
+        if (preserveConfigToggleScreenY == null) {
+            return@LaunchedEffect
+        }
+        delay(350)
+        restoreConfigToggleScreenY()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -176,7 +210,13 @@ fun MainScreen(
                 SettingSwitchRow(
                     title = "Режим настройки панелей",
                     checked = state.settings.configMode,
-                    onCheckedChange = onConfigModeChange,
+                    onCheckedChange = { enabled ->
+                        preserveConfigToggleScreenY = configToggleScreenY
+                        onConfigModeChange(enabled)
+                    },
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        configToggleScreenY = coordinates.positionInRoot().y
+                    },
                 )
                 if (state.settings.configMode) {
                     Text(
@@ -293,9 +333,10 @@ private fun SettingSwitchRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = SettingRowMinHeight),
         horizontalArrangement = Arrangement.SpaceBetween,

@@ -79,7 +79,12 @@ object GamePacksHelper {
     }
 
     fun openTanksRootFolder(context: Context): Boolean {
-        val documentId = "primary:Android/data/com.tanksblitz/files"
+        return openExternalFolder(context, TANKS_PACKS_RELATIVE_PATH) ||
+            openExternalFolder(context, "Android/data/com.tanksblitz/files")
+    }
+
+    private fun openExternalFolder(context: Context, relativePath: String): Boolean {
+        val documentId = "primary:$relativePath"
         val documentUri = DocumentsContract.buildDocumentUri(
             "com.android.externalstorage.documents",
             documentId,
@@ -109,7 +114,7 @@ object GamePacksHelper {
             },
             Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(
-                    Uri.parse("file://$storageRoot/Android/data/com.tanksblitz/files"),
+                    Uri.parse("file://$storageRoot/$relativePath"),
                     "resource/folder",
                 )
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

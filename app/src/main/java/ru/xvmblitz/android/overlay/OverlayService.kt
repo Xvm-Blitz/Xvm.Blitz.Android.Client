@@ -53,8 +53,6 @@ import ru.xvmblitz.android.domain.BattleUiState
 import ru.xvmblitz.android.ui.MainActivity
 import ru.xvmblitz.android.ui.theme.XvmBlitzTheme
 import ru.xvmblitz.android.util.AppAlertNotifier
-import ru.xvmblitz.android.util.CaptureAccessGuard
-import ru.xvmblitz.android.util.CaptureAccessResult
 import kotlin.math.abs
 
 class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
@@ -233,18 +231,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     }
 
     private fun startCaptureAfterHidingOverlay() {
-        scope.launch {
-            when (val access = CaptureAccessGuard.check(XvmBlitzApp.instance.container)) {
-                is CaptureAccessResult.Denied -> {
-                    signalFabAccessDenied(access.message)
-                    return@launch
-                }
-                CaptureAccessResult.Allowed -> Unit
-            }
-            setHiddenForCapture(true)
-            delay(OVERLAY_HIDE_DELAY_MS)
-            CaptureRequestActivity.start(this@OverlayService)
-        }
+        CaptureRequestActivity.start(this)
     }
 
     private fun signalFabAccessDenied(message: String) {
@@ -287,6 +274,13 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
     }
 
+    private fun hideBattleStatistics() {
+        XvmBlitzApp.instance.container.battleStatisticsStore.clear()
+        currentBattle = BattleUiState()
+        hiddenForCapture = false
+        renderPanels()
+    }
+
     private fun renderPanels() {
         if (hiddenForCapture) {
             alliesView?.visibility = android.view.View.GONE
@@ -295,13 +289,15 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             return
         }
 
-        val panelsVisible = currentSettings.overlayVisible &&
+        val showPanels = currentSettings.overlayVisible &&
             (currentBattle.hasBattle || currentSettings.configMode)
-        val panelVisibility = if (panelsVisible) android.view.View.VISIBLE else android.view.View.GONE
-        alliesView?.visibility = panelVisibility
-        enemiesView?.visibility = panelVisibility
+        val showCaptureButton = currentSettings.overlayVisible && !showPanels
+        alliesView?.visibility =
+            if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
+        enemiesView?.visibility =
+            if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
         captureButtonView?.visibility =
-            if (panelsVisible) android.view.View.GONE else android.view.View.VISIBLE
+            if (showCaptureButton) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun applySettings(settings: AppSettings) {
@@ -324,16 +320,18 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     }
 
     private fun attachCaptureButtonTouch(view: ComposeView) {
-        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val dragThresholdPx = CAPTURE_BUTTON_DRAG_THRESHOLD_DP * resources.displayMetrics.density
         var initialX = 0
         var initialY = 0
         var touchX = 0f
         var touchY = 0f
         var dragged = false
 
+        view.isClickable = true
+        view.isFocusable = true
         view.setOnTouchListener { _, event ->
             val params = captureButtonParams ?: return@setOnTouchListener false
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
                     initialY = params.y
@@ -345,7 +343,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                    if (abs(dx) > dragThresholdPx || abs(dy) > dragThresholdPx) {
                         dragged = true
                     }
                     if (dragged) {
@@ -355,8 +353,14 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (dragged) {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                        return@setOnTouchListener true
+                    }
+                    val totalDx = abs(event.rawX - touchX)
+                    val totalDy = abs(event.rawY - touchY)
+                    val isClick = totalDx <= dragThresholdPx && totalDy <= dragThresholdPx
+                    if (!isClick) {
                         scope.launch {
                             XvmBlitzApp.instance.container.settingsRepository
                                 .updateCaptureButtonPosition(params.x, params.y)
@@ -525,9 +529,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         popup.menu.add(0, MENU_HIDE_STATS, 0, "Скрыть статистику")
         popup.setOnMenuItemClickListener { item ->
             if (item.itemId == MENU_HIDE_STATS) {
-                scope.launch {
-                    XvmBlitzApp.instance.container.settingsRepository.setOverlayVisible(false)
-                }
+                hideBattleStatistics()
                 true
             } else {
                 false
@@ -695,6 +697,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         private const val NOTIFICATION_ID = 1001
         private const val MENU_HIDE_STATS = 1
         const val OVERLAY_HIDE_DELAY_MS = 400L
+        private const val CAPTURE_BUTTON_DRAG_THRESHOLD_DP = 24f
         const val ACTION_TOGGLE = "ru.xvmblitz.android.overlay.TOGGLE"
         const val ACTION_CAPTURE = "ru.xvmblitz.android.overlay.CAPTURE"
         const val ACTION_HIDE_FOR_CAPTURE = "ru.xvmblitz.android.overlay.HIDE_FOR_CAPTURE"

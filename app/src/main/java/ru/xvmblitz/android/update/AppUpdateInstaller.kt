@@ -63,7 +63,7 @@ class AppUpdateInstaller(
                 val preview = body.string().take(180)
                 error(
                     "Сервер вернул не APK (${contentType.ifBlank { "unknown" }}). " +
-                        preview.ifBlank { "Проверьте download_url / RELEASE_DOWNLOAD_TOKEN." },
+                        preview.ifBlank { "Проверьте download_url релиза." },
                 )
             }
 

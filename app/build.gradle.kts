@@ -14,21 +14,6 @@ val keystoreProperties = Properties().apply {
     }
 }
 
-val localProperties = Properties().apply {
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localPropertiesFile.inputStream().use(::load)
-    }
-}
-
-val releaseDownloadToken = (
-    System.getenv("RELEASE_DOWNLOAD_TOKEN")
-        ?: localProperties.getProperty("release.download.token")
-        ?: ""
-    )
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-
 android {
     namespace = "ru.xvmblitz.android"
     compileSdk = 35
@@ -39,7 +24,6 @@ android {
         targetSdk = 35
         versionCode = 17
         versionName = "1.3.6"
-        buildConfigField("String", "RELEASE_DOWNLOAD_TOKEN", "\"$releaseDownloadToken\"")
     }
 
     signingConfigs {
