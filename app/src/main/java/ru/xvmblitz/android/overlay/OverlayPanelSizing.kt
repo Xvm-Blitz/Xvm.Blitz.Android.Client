@@ -11,7 +11,7 @@ const val OverlayResizeHandleDp = 28f
 const val OverlayResizeEdgeThicknessDp = 20f
 const val OverlayResizeEdgeLengthDp = 36f
 
-private const val OverlayMinFontScale = 0.75f
+private const val OverlayMinFontScale = 0.55f
 
 fun coerceOverlayScaleX(scale: Float): Float = scale.coerceIn(OverlayMinScaleX, OverlayMaxScaleX)
 
@@ -35,7 +35,3 @@ fun overlayFontSizeSp(scaleY: Float): Float {
 }
 
 const val OverlayRowSpacingPx = 5
-
-fun overlayRowVerticalPaddingDp(scaleY: Float): Float = 0f
-
-fun overlayContentPaddingYDp(scaleY: Float): Float = (5f / 3f) * coerceOverlayScaleY(scaleY)

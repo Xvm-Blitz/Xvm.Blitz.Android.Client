@@ -5,15 +5,18 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -64,17 +67,31 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var alliesView: ComposeView? = null
     private var enemiesView: ComposeView? = null
     private var captureButtonView: ComposeView? = null
+    private var directionHintView: ComposeView? = null
     private var alliesParams: WindowManager.LayoutParams? = null
     private var enemiesParams: WindowManager.LayoutParams? = null
     private var captureButtonParams: WindowManager.LayoutParams? = null
+    private var directionHintParams: WindowManager.LayoutParams? = null
     private var collectJob: Job? = null
     private var currentSettings = AppSettings()
     private var currentBattle = BattleUiState()
     private var hiddenForCapture = false
+    private var captureButtonOriginOffsetX = 0
+    private var captureButtonOriginOffsetY = 0
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
     private val fabErrorPulse = MutableStateFlow(0)
     private val fabErrorMessage = MutableStateFlow<String?>(null)
+    private val captureButtonOffScreenDirection =
+        MutableStateFlow<CaptureButtonOffScreenDirection?>(null)
     private var fabErrorHideJob: Job? = null
+    private val configurationCallbacks = object : ComponentCallbacks {
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            updateCaptureButtonWindowPosition()
+            updateCaptureButtonDirectionHint()
+        }
+
+        override fun onLowMemory() = Unit
+    }
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -87,6 +104,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        registerComponentCallbacks(configurationCallbacks)
         startAsForeground()
         ensureViews()
         collectJob = scope.launch {
@@ -140,6 +158,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     override fun onDestroy() {
         collectJob?.cancel()
         scope.cancel()
+        unregisterComponentCallbacks(configurationCallbacks)
         removeViews()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
@@ -169,7 +188,17 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             )
             captureButtonView = createComposeOverlayView { FloatingActionButtonContent() }.also { view ->
                 attachCaptureButtonTouch(view)
+                view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    updateCaptureButtonDirectionHint()
+                }
                 windowManager.addView(view, captureButtonParams)
+            }
+        }
+        if (directionHintView == null) {
+            directionHintParams = createLayoutParams(0, 0)
+            directionHintView = createComposeOverlayView { DirectionHintContent() }.also { view ->
+                view.visibility = android.view.View.GONE
+                windowManager.addView(view, directionHintParams)
             }
         }
         renderPanels()
@@ -191,7 +220,29 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun FloatingActionButtonContent() {
         val errorPulse by fabErrorPulse.collectAsState()
         val errorMessage by fabErrorMessage.collectAsState()
-        OverlayFab(errorPulse = errorPulse, errorMessage = errorMessage)
+        val screen = currentScreenSizePx()
+        OverlayFab(
+            errorPulse = errorPulse,
+            errorMessage = errorMessage,
+            buttonX = currentSettings.captureButtonX,
+            buttonY = currentSettings.captureButtonY,
+            screenWidthPx = screen.width,
+            screenHeightPx = screen.height,
+            onWindowOriginOffset = { offsetX, offsetY ->
+                if (captureButtonOriginOffsetX != offsetX || captureButtonOriginOffsetY != offsetY) {
+                    captureButtonOriginOffsetX = offsetX
+                    captureButtonOriginOffsetY = offsetY
+                    updateCaptureButtonWindowPosition()
+                }
+            },
+        )
+    }
+
+    @Composable
+    private fun DirectionHintContent() {
+        val direction by captureButtonOffScreenDirection.collectAsState()
+        val resolved = direction ?: return
+        CaptureButtonDirectionHint(direction = resolved)
     }
 
     @Composable
@@ -246,6 +297,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         setHiddenForCapture(false)
         renderPanels()
         captureButtonView?.visibility = android.view.View.VISIBLE
+        updateCaptureButtonDirectionHint()
     }
 
     private fun vibrateError() {
@@ -286,6 +338,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             alliesView?.visibility = android.view.View.GONE
             enemiesView?.visibility = android.view.View.GONE
             captureButtonView?.visibility = android.view.View.GONE
+            directionHintView?.visibility = android.view.View.GONE
             return
         }
 
@@ -298,6 +351,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
         captureButtonView?.visibility =
             if (showCaptureButton) android.view.View.VISIBLE else android.view.View.GONE
+        updateCaptureButtonDirectionHint()
     }
 
     private fun applySettings(settings: AppSettings) {
@@ -311,18 +365,95 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             params.y = settings.enemiesY
             enemiesView?.let { windowManager.updateViewLayout(it, params) }
         }
-        captureButtonParams?.let { params ->
-            params.x = settings.captureButtonX
-            params.y = settings.captureButtonY
-            captureButtonView?.let { windowManager.updateViewLayout(it, params) }
-        }
+        updateCaptureButtonWindowPosition()
         renderPanels()
+    }
+
+    private fun updateCaptureButtonWindowPosition() {
+        val params = captureButtonParams ?: return
+        val view = captureButtonView ?: return
+        params.x = currentSettings.captureButtonX + captureButtonOriginOffsetX
+        params.y = currentSettings.captureButtonY + captureButtonOriginOffsetY
+        runCatching { windowManager.updateViewLayout(view, params) }
+        updateCaptureButtonDirectionHint()
+    }
+
+    private fun currentScreenSizePx(): ScreenSizePx {
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        return ScreenSizePx(width = metrics.widthPixels, height = metrics.heightPixels)
+    }
+
+    private fun updateCaptureButtonDirectionHint() {
+        val hintView = directionHintView
+        val hintParams = directionHintParams
+        if (hintView == null || hintParams == null) {
+            return
+        }
+        val showCaptureButton = currentSettings.overlayVisible &&
+            !hiddenForCapture &&
+            !(currentBattle.hasBattle || currentSettings.configMode)
+        if (!showCaptureButton) {
+            captureButtonOffScreenDirection.value = null
+            hintView.visibility = android.view.View.GONE
+            return
+        }
+
+        val screen = currentScreenSizePx()
+        val density = resources.displayMetrics.density
+        val buttonWidth = (64 * density).toInt()
+        val buttonHeight = (22 * density).toInt()
+        val buttonX = currentSettings.captureButtonX
+        val buttonY = currentSettings.captureButtonY
+        val direction = resolveCaptureButtonOffScreenDirection(
+            buttonX = buttonX,
+            buttonY = buttonY,
+            buttonWidth = buttonWidth,
+            buttonHeight = buttonHeight,
+            screenWidth = screen.width,
+            screenHeight = screen.height,
+        )
+        captureButtonOffScreenDirection.value = direction
+        if (direction == null) {
+            hintView.visibility = android.view.View.GONE
+            return
+        }
+
+        val hintSize = (36 * density).toInt()
+        val edgePadding = (10 * density).toInt()
+        val buttonCenterX = buttonX + buttonWidth / 2
+        val buttonCenterY = buttonY + buttonHeight / 2
+        when (direction) {
+            CaptureButtonOffScreenDirection.Left -> {
+                hintParams.x = edgePadding
+                hintParams.y = (buttonCenterY - hintSize / 2)
+                    .coerceIn(edgePadding, screen.height - hintSize - edgePadding)
+            }
+            CaptureButtonOffScreenDirection.Right -> {
+                hintParams.x = screen.width - hintSize - edgePadding
+                hintParams.y = (buttonCenterY - hintSize / 2)
+                    .coerceIn(edgePadding, screen.height - hintSize - edgePadding)
+            }
+            CaptureButtonOffScreenDirection.Top -> {
+                hintParams.x = (buttonCenterX - hintSize / 2)
+                    .coerceIn(edgePadding, screen.width - hintSize - edgePadding)
+                hintParams.y = edgePadding
+            }
+            CaptureButtonOffScreenDirection.Bottom -> {
+                hintParams.x = (buttonCenterX - hintSize / 2)
+                    .coerceIn(edgePadding, screen.width - hintSize - edgePadding)
+                hintParams.y = screen.height - hintSize - edgePadding
+            }
+        }
+        hintView.visibility = android.view.View.VISIBLE
+        runCatching { windowManager.updateViewLayout(hintView, hintParams) }
     }
 
     private fun attachCaptureButtonTouch(view: ComposeView) {
         val dragThresholdPx = CAPTURE_BUTTON_DRAG_THRESHOLD_DP * resources.displayMetrics.density
-        var initialX = 0
-        var initialY = 0
+        var initialButtonX = 0
+        var initialButtonY = 0
         var touchX = 0f
         var touchY = 0f
         var dragged = false
@@ -333,8 +464,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             val params = captureButtonParams ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
+                    initialButtonX = currentSettings.captureButtonX
+                    initialButtonY = currentSettings.captureButtonY
                     touchX = event.rawX
                     touchY = event.rawY
                     dragged = false
@@ -347,9 +478,16 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                         dragged = true
                     }
                     if (dragged) {
-                        params.x = initialX + dx.toInt()
-                        params.y = initialY + dy.toInt()
+                        val buttonX = initialButtonX + dx.toInt()
+                        val buttonY = initialButtonY + dy.toInt()
+                        currentSettings = currentSettings.copy(
+                            captureButtonX = buttonX,
+                            captureButtonY = buttonY,
+                        )
+                        params.x = buttonX + captureButtonOriginOffsetX
+                        params.y = buttonY + captureButtonOriginOffsetY
                         windowManager.updateViewLayout(view, params)
+                        updateCaptureButtonDirectionHint()
                     }
                     true
                 }
@@ -361,9 +499,11 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     val totalDy = abs(event.rawY - touchY)
                     val isClick = totalDx <= dragThresholdPx && totalDy <= dragThresholdPx
                     if (!isClick) {
+                        val buttonX = currentSettings.captureButtonX
+                        val buttonY = currentSettings.captureButtonY
                         scope.launch {
                             XvmBlitzApp.instance.container.settingsRepository
-                                .updateCaptureButtonPosition(params.x, params.y)
+                                .updateCaptureButtonPosition(buttonX, buttonY)
                         }
                     } else if (currentSettings.configMode) {
                         scope.launch {
@@ -625,10 +765,21 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         alliesView?.let { runCatching { windowManager.removeView(it) } }
         enemiesView?.let { runCatching { windowManager.removeView(it) } }
         captureButtonView?.let { runCatching { windowManager.removeView(it) } }
+        directionHintView?.let { runCatching { windowManager.removeView(it) } }
         alliesView = null
         enemiesView = null
         captureButtonView = null
+        directionHintView = null
+        alliesParams = null
+        enemiesParams = null
+        captureButtonParams = null
+        directionHintParams = null
     }
+
+    private data class ScreenSizePx(
+        val width: Int,
+        val height: Int,
+    )
 
     private fun startAsForeground() {
         val channelId = "xvm_overlay"

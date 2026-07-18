@@ -9,7 +9,8 @@ import ru.xvmblitz.android.data.api.BattleStatisticsDto
 data class PlayerSlot(
     val tableNumber: Int,
     val isMissing: Boolean,
-    val nicknameWithClanTag: String? = null,
+    val nickname: String? = null,
+    val clanTag: String? = null,
     val tank: String? = null,
     val numberOfBattles: Int? = null,
     val winRate: Double? = null,
@@ -45,14 +46,11 @@ class BattleStatisticsStore {
                 PlayerSlot(tableNumber = tableNumber, isMissing = true)
             } else {
                 val player = group.first()
-                val nicknameWithClanTag = when {
-                    player.clanTag.isNullOrBlank() -> player.nickname
-                    else -> "[${player.clanTag}] ${player.nickname}"
-                }
                 PlayerSlot(
                     tableNumber = tableNumber,
                     isMissing = false,
-                    nicknameWithClanTag = nicknameWithClanTag,
+                    nickname = player.nickname,
+                    clanTag = player.clanTag?.takeIf { tag -> tag.isNotBlank() },
                     tank = player.tank ?: "неизвестный танк",
                     numberOfBattles = player.numberOfBattles,
                     winRate = player.winRatePercents,
@@ -68,7 +66,8 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 0,
                 isMissing = false,
-                nicknameWithClanTag = "ИгрокСОченьДлиннымИменем",
+                nickname = "ИгрокСОченьДлиннымИменем",
+                clanTag = "XVM",
                 tank = "Т-54 первый образец великолепный",
                 numberOfBattles = 0,
                 winRate = 52.45,
@@ -76,7 +75,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 1,
                 isMissing = false,
-                nicknameWithClanTag = "НизкийРейтинг",
+                nickname = "НизкийРейтинг",
                 tank = "КВ-1",
                 numberOfBattles = 999,
                 winRate = 45.23,
@@ -84,7 +83,8 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 2,
                 isMissing = false,
-                nicknameWithClanTag = "СреднийРейтинг",
+                nickname = "СреднийРейтинг",
+                clanTag = "ABC",
                 tank = "T-34-85",
                 numberOfBattles = 1000,
                 winRate = 55.78,
@@ -92,7 +92,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 3,
                 isMissing = false,
-                nicknameWithClanTag = "ВысокийРейтинг",
+                nickname = "ВысокийРейтинг",
                 tank = "ИС-7",
                 numberOfBattles = 1001,
                 winRate = 65.92,
@@ -100,7 +100,8 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 4,
                 isMissing = false,
-                nicknameWithClanTag = "СуперРейтинг",
+                nickname = "СуперРейтинг",
+                clanTag = "TOP",
                 tank = "Объект 140",
                 numberOfBattles = 7000,
                 winRate = 75.34,
@@ -108,7 +109,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 5,
                 isMissing = false,
-                nicknameWithClanTag = "СреднийРейтинг",
+                nickname = "СреднийРейтинг",
                 tank = "T62A",
                 numberOfBattles = 2134,
                 winRate = 58.45,
@@ -116,7 +117,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 6,
                 isMissing = false,
-                nicknameWithClanTag = "ИгрокБезТанка",
+                nickname = "ИгрокБезТанка",
                 tank = "",
                 numberOfBattles = 2134,
                 winRate = 50.00,
@@ -127,7 +128,8 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 0,
                 isMissing = false,
-                nicknameWithClanTag = "VeryLongEnemyName1234567",
+                nickname = "VeryLongEnemyName1234567",
+                clanTag = "BAD",
                 tank = "Maus with long description",
                 numberOfBattles = 47000,
                 winRate = 51.23,
@@ -135,7 +137,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 1,
                 isMissing = false,
-                nicknameWithClanTag = "Enemy1",
+                nickname = "Enemy1",
                 tank = "Tiger II",
                 numberOfBattles = 42000,
                 winRate = 48.76,
@@ -143,7 +145,8 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 2,
                 isMissing = false,
-                nicknameWithClanTag = "Enemy2",
+                nickname = "Enemy2",
+                clanTag = "RED",
                 tank = "IS-4",
                 numberOfBattles = 17000,
                 winRate = 54.21,
@@ -151,7 +154,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 3,
                 isMissing = false,
-                nicknameWithClanTag = "Enemy3",
+                nickname = "Enemy3",
                 tank = "E-100",
                 numberOfBattles = 45668,
                 winRate = 62.45,
@@ -159,7 +162,8 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 4,
                 isMissing = false,
-                nicknameWithClanTag = "Enemy4",
+                nickname = "Enemy4",
+                clanTag = "GHG",
                 tank = "Jagdpanzer E-100",
                 numberOfBattles = 15000,
                 winRate = 72.89,
