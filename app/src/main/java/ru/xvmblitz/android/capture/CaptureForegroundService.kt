@@ -11,12 +11,15 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -62,7 +65,6 @@ class CaptureForegroundService : Service() {
                 delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
-                    var lastErrorMessage: String? = null
                     for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
                         delay(attemptDelayMs)
                         try {
@@ -73,12 +75,17 @@ class CaptureForegroundService : Service() {
                                 "battleScreenshot.png",
                                 body,
                             )
-                            val battle = container.statisticsApi.getBattleStatistics(apiKey, part)
+                            val battle = withTimeout(STATISTICS_REQUEST_TIMEOUT) {
+                                container.statisticsApi.getBattleStatistics(apiKey, part)
+                            }
                             container.battleStatisticsStore.publish(battle)
                             container.settingsRepository.setOverlayVisible(true)
                             OverlayService.start(applicationContext)
                             OverlayService.restoreAfterCapture(applicationContext)
                             CaptureEvents.emit(CaptureEvents.Result.Success)
+                            return@launch
+                        } catch (exception: TimeoutCancellationException) {
+                            notifyStatisticsFailed()
                             return@launch
                         } catch (exception: Exception) {
                             val denied = CaptureAccessGuard.classifyError(exception)
@@ -86,27 +93,18 @@ class CaptureForegroundService : Service() {
                                 notifyAccessDenied(denied.message)
                                 return@launch
                             }
-                            lastErrorMessage = exception.message ?: "Ошибка захвата/распознавания"
                         }
                     }
-                    OverlayService.restoreAfterCapture(applicationContext)
-                    CaptureEvents.emit(
-                        CaptureEvents.Result.Error(
-                            lastErrorMessage ?: "Не удалось распознать бой",
-                        ),
-                    )
+                    notifyStatisticsFailed()
                 }
+            } catch (exception: TimeoutCancellationException) {
+                notifyStatisticsFailed()
             } catch (exception: Exception) {
                 val denied = CaptureAccessGuard.classifyError(exception)
                 if (denied != null) {
                     notifyAccessDenied(denied.message)
                 } else {
-                    OverlayService.restoreAfterCapture(applicationContext)
-                    CaptureEvents.emit(
-                        CaptureEvents.Result.Error(
-                            exception.message ?: "Ошибка захвата/распознавания",
-                        ),
-                    )
+                    notifyStatisticsFailed()
                 }
             } finally {
                 stopSelf()
@@ -114,6 +112,10 @@ class CaptureForegroundService : Service() {
         }
 
         return START_NOT_STICKY
+    }
+
+    private suspend fun notifyStatisticsFailed() {
+        notifyAccessDenied(STATISTICS_FAILED_MESSAGE)
     }
 
     private suspend fun notifyAccessDenied(message: String) {
@@ -155,7 +157,8 @@ class CaptureForegroundService : Service() {
         private const val NOTIFICATION_ID = 1002
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "data"
-
+        private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
+        private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
         private val CAPTURE_ATTEMPT_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
 
         fun start(context: Context, resultCode: Int, data: Intent) {

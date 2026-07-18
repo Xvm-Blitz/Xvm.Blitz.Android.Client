@@ -29,8 +29,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import ru.xvmblitz.android.ui.components.AdaptiveButton
-import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,13 +39,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
-import java.time.OffsetDateTime
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
+import ru.xvmblitz.android.ui.components.AdaptiveButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +56,7 @@ fun AuthScreen(
     isAuthorized: Boolean,
     usage: GetUsageResponseDto?,
     usageError: String?,
+    usageUpdatedAtEpochMs: Long?,
     isUsageLoading: Boolean,
     onBack: () -> Unit,
     onAuthorize: (apiKey: String, apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
@@ -81,9 +83,7 @@ fun AuthScreen(
     ) { padding ->
         if (isAuthorized) {
             LaunchedEffect(Unit) {
-                if (usage == null && !isUsageLoading) {
-                    onRefreshUsage()
-                }
+                onRefreshUsage()
             }
             AuthorizedQuotaContent(
                 modifier = Modifier
@@ -93,8 +93,8 @@ fun AuthScreen(
                     .padding(20.dp),
                 usage = usage,
                 usageError = usageError,
+                usageUpdatedAtEpochMs = usageUpdatedAtEpochMs,
                 isUsageLoading = isUsageLoading,
-                onRefreshUsage = onRefreshUsage,
                 onLogout = onLogout,
             )
         } else {
@@ -230,8 +230,8 @@ private fun AuthorizedQuotaContent(
     modifier: Modifier = Modifier,
     usage: GetUsageResponseDto?,
     usageError: String?,
+    usageUpdatedAtEpochMs: Long?,
     isUsageLoading: Boolean,
-    onRefreshUsage: () -> Unit,
     onLogout: () -> Unit,
 ) {
     var showChangeKeyConfirm by remember { mutableStateOf(false) }
@@ -282,9 +282,9 @@ private fun AuthorizedQuotaContent(
                     Text(
                         text = "${formatUsageDate(usage.periodStart)} — ${formatUsageDate(usage.periodEnd)}",
                     )
-                    remainingPeriodText(usage.periodEnd)?.let { remaining ->
+                    remainingPeriodText(usage.periodEnd)?.let { remainingPeriod ->
                         Text(
-                            text = remaining,
+                            text = remainingPeriod,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                         )
@@ -309,21 +309,19 @@ private fun AuthorizedQuotaContent(
             Text(usageError ?: "Информация об использовании отсутствует")
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AdaptiveOutlinedButton(
-                text = "Обновить",
-                onClick = onRefreshUsage,
-                enabled = !isUsageLoading,
-            )
-            AdaptiveButton(
-                text = "Сменить API ключ",
-                onClick = { showChangeKeyConfirm = true },
-                modifier = Modifier.weight(1f),
+        formatUsageUpdatedAt(usageUpdatedAtEpochMs)?.let { updatedAtText ->
+            Text(
+                text = updatedAtText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
             )
         }
+
+        AdaptiveButton(
+            text = "Сменить API ключ",
+            onClick = { showChangeKeyConfirm = true },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 
     if (showChangeKeyConfirm) {
@@ -355,6 +353,17 @@ private fun AuthorizedQuotaContent(
 }
 
 private val usageDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+private val usageUpdatedAtFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")
+
+private fun formatUsageUpdatedAt(epochMs: Long?): String? {
+    if (epochMs == null) {
+        return null
+    }
+    val formatted = Instant.ofEpochMilli(epochMs)
+        .atZone(ZoneId.systemDefault())
+        .format(usageUpdatedAtFormatter)
+    return "Обновлено: $formatted"
+}
 
 private fun formatUsageDate(raw: String): String {
     return runCatching {

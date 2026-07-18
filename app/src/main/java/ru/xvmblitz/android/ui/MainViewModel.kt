@@ -40,6 +40,7 @@ data class MainUiState(
     val usage: GetUsageResponseDto? = null,
     val battle: BattleUiState = BattleUiState(),
     val usageError: String? = null,
+    val usageUpdatedAtEpochMs: Long? = null,
     val isUsageLoading: Boolean = false,
     val isAuthorized: Boolean = false,
     val update: UpdateUiState = UpdateUiState(),
@@ -50,6 +51,7 @@ class MainViewModel(
 ) : ViewModel() {
     private val usageState = MutableStateFlow<GetUsageResponseDto?>(null)
     private val usageError = MutableStateFlow<String?>(null)
+    private val usageUpdatedAtEpochMs = MutableStateFlow<Long?>(null)
     private val usageLoading = MutableStateFlow(false)
     private val updateState = MutableStateFlow(UpdateUiState())
     private val updateInstaller = AppUpdateInstaller(container.appContext, container.httpClient)
@@ -68,17 +70,24 @@ class MainViewModel(
                 isAuthorized = !apiKey.isNullOrBlank(),
             )
         },
-        combine(usageError, usageLoading, updateState) { error, loading, update ->
-            Triple(error, loading, update)
+        combine(usageError, usageLoading, updateState, usageUpdatedAtEpochMs) { error, loading, update, updatedAt ->
+            UsageExtras(error, loading, update, updatedAt)
         },
-    ) { baseState, errorLoadingUpdate ->
-        val (error, loading, update) = errorLoadingUpdate
+    ) { baseState, extras ->
         baseState.copy(
-            usageError = error,
-            isUsageLoading = loading,
-            update = update,
+            usageError = extras.error,
+            isUsageLoading = extras.loading,
+            update = extras.update,
+            usageUpdatedAtEpochMs = extras.updatedAtEpochMs,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
+
+    private data class UsageExtras(
+        val error: String?,
+        val loading: Boolean,
+        val update: UpdateUiState,
+        val updatedAtEpochMs: Long?,
+    )
 
     init {
         refreshUsage()
@@ -102,6 +111,7 @@ class MainViewModel(
             usageError.value = null
             try {
                 usageState.value = container.usageApi.getUsage(apiKey)
+                usageUpdatedAtEpochMs.value = System.currentTimeMillis()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
@@ -144,11 +154,13 @@ class MainViewModel(
                 onResult(Result.success(Unit))
                 val usage = container.usageApi.getUsage(trimmed)
                 usageState.value = usage
+                usageUpdatedAtEpochMs.value = System.currentTimeMillis()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
                 if (container.authRepository.isAuthorized) {
                     usageState.value = null
+                    usageUpdatedAtEpochMs.value = null
                     usageError.value = exception.message ?: "Не удалось получить квоту"
                     onResult(Result.success(Unit))
                 } else {
@@ -282,6 +294,7 @@ class MainViewModel(
         container.authRepository.logout()
         usageState.value = null
         usageError.value = null
+        usageUpdatedAtEpochMs.value = null
         container.battleStatisticsStore.clear()
     }
 

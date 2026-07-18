@@ -143,6 +143,7 @@ class MainActivity : ComponentActivity() {
                                 isAuthorized = uiState.isAuthorized,
                                 usage = uiState.usage,
                                 usageError = uiState.usageError,
+                                usageUpdatedAtEpochMs = uiState.usageUpdatedAtEpochMs,
                                 isUsageLoading = uiState.isUsageLoading,
                                 onBack = {
                                     navController.popBackStack()
