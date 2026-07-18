@@ -129,6 +129,7 @@ private val GuideSteps = listOf(
             UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl
             Fonts → Jost-Light.ttf.dvpl
             С замененным шрифтом некоторые надписи в интерфейсе игры могут отображаться некорректно.
+            Чтобы вернуть поведение по умолчанию, просто удалите эти файлы.
         """.trimIndent(),
         illustration = GuideIllustration.GameFiles,
     ),
@@ -175,14 +176,15 @@ fun GuideScreen(
     onBack: () -> Unit,
     onFinished: () -> Unit,
 ) {
-    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var stepIndex by remember { mutableIntStateOf(0) }
     var goingForward by remember { mutableStateOf(true) }
     var exportedFolder by remember { mutableStateOf<File?>(null) }
     var showOpenExportedFolderDialog by remember { mutableStateOf(false) }
+    var showGameFilesCopyHelp by remember { mutableStateOf(false) }
     val step = GuideSteps[stepIndex]
+    val isGameFilesStep = step.illustration == GuideIllustration.GameFiles
     val isLast = stepIndex == GuideSteps.lastIndex
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -190,6 +192,9 @@ fun GuideScreen(
     val swipeThresholdPx = with(density) { 56.dp.toPx() }
 
     fun goNext() {
+        if (showGameFilesCopyHelp) {
+            showGameFilesCopyHelp = false
+        }
         if (isLast) {
             onFinished()
         } else {
@@ -199,6 +204,10 @@ fun GuideScreen(
     }
 
     fun goPrevious() {
+        if (showGameFilesCopyHelp) {
+            showGameFilesCopyHelp = false
+            return
+        }
         if (stepIndex == 0) {
             onBack()
         } else {
@@ -206,6 +215,8 @@ fun GuideScreen(
             stepIndex -= 1
         }
     }
+
+    BackHandler(onBack = ::goPrevious)
 
     fun openTanksFolder() {
         if (!GamePacksHelper.openTanksRootFolder(context)) {
@@ -217,7 +228,22 @@ fun GuideScreen(
         }
     }
 
+    fun exportAndOfferFolder() {
+        coroutineScope.launch {
+            val folder = withContext(Dispatchers.IO) {
+                runCatching { GamePacksHelper.exportPackFiles(context) }.getOrNull()
+            }
+            if (folder != null) {
+                exportedFolder = folder
+                showOpenExportedFolderDialog = true
+            } else {
+                Toast.makeText(context, "Не удалось сохранить файлы для копирования", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     LaunchedEffect(stepIndex) {
+        showGameFilesCopyHelp = false
         if (GuideSteps[stepIndex].illustration == GuideIllustration.GameFiles) {
             val folder = withContext(Dispatchers.IO) {
                 runCatching { GamePacksHelper.exportPackFiles(context) }.getOrNull()
@@ -337,7 +363,7 @@ fun GuideScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(stepIndex, isLast) {
+                    .pointerInput(stepIndex, isLast, showGameFilesCopyHelp) {
                         var totalDrag = 0f
                         detectHorizontalDragGestures(
                             onDragStart = { totalDrag = 0f },
@@ -355,6 +381,8 @@ fun GuideScreen(
                         )
                     },
             ) { current ->
+                val showingCopyHelp =
+                    showGameFilesCopyHelp && current.illustration == GuideIllustration.GameFiles
                 if (isLandscape) {
                     Row(
                         modifier = Modifier.fillMaxSize(),
@@ -372,10 +400,17 @@ fun GuideScreen(
                             )
                         }
                         GuideStepText(
-                            title = current.title,
+                            title = if (showingCopyHelp) {
+                                "Как скопировать файлы"
+                            } else {
+                                current.title
+                            },
                             description = current.description,
                             isGameFilesStep = current.illustration == GuideIllustration.GameFiles,
+                            showGameFilesCopyHelp = showingCopyHelp,
                             onOpenTanksFolder = ::openTanksFolder,
+                            onShowCopyHelp = { showGameFilesCopyHelp = true },
+                            onExportFiles = ::exportAndOfferFolder,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxSize(),
@@ -399,10 +434,17 @@ fun GuideScreen(
                             )
                         }
                         GuideStepText(
-                            title = current.title,
+                            title = if (showingCopyHelp) {
+                                "Как скопировать файлы"
+                            } else {
+                                current.title
+                            },
                             description = current.description,
                             isGameFilesStep = current.illustration == GuideIllustration.GameFiles,
+                            showGameFilesCopyHelp = showingCopyHelp,
                             onOpenTanksFolder = ::openTanksFolder,
+                            onShowCopyHelp = { showGameFilesCopyHelp = true },
+                            onExportFiles = ::exportAndOfferFolder,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f),
@@ -420,7 +462,13 @@ fun GuideScreen(
                     onClick = ::goPrevious,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(if (stepIndex == 0) "Закрыть" else "Назад")
+                    Text(
+                        when {
+                            showGameFilesCopyHelp && isGameFilesStep -> "Назад"
+                            stepIndex == 0 -> "Закрыть"
+                            else -> "Назад"
+                        },
+                    )
                 }
                 Button(
                     onClick = ::goNext,
@@ -438,7 +486,10 @@ private fun GuideStepText(
     title: String,
     description: String,
     isGameFilesStep: Boolean,
+    showGameFilesCopyHelp: Boolean,
     onOpenTanksFolder: () -> Unit,
+    onShowCopyHelp: () -> Unit,
+    onExportFiles: () -> Unit,
     modifier: Modifier = Modifier,
     textAlign: TextAlign,
 ) {
@@ -459,10 +510,17 @@ private fun GuideStepText(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(10.dp))
-        if (isGameFilesStep) {
+        if (isGameFilesStep && showGameFilesCopyHelp) {
+            GameFilesCopyHelpDescription(
+                textAlign = textAlign,
+                onOpenTanksFolder = onOpenTanksFolder,
+                onExportFiles = onExportFiles,
+            )
+        } else if (isGameFilesStep) {
             GameFilesDescription(
                 textAlign = textAlign,
                 onOpenTanksFolder = onOpenTanksFolder,
+                onShowCopyHelp = onShowCopyHelp,
             )
         } else {
             Text(
@@ -480,6 +538,7 @@ private fun GuideStepText(
 private fun GameFilesDescription(
     textAlign: TextAlign,
     onOpenTanksFolder: () -> Unit,
+    onShowCopyHelp: () -> Unit,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
     val bodyColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
@@ -510,18 +569,127 @@ private fun GameFilesDescription(
                 append("UI/Screens3 → Font.style.dvpl\n")
                 append("UI/Screens/Battle → BattleLoadingScreen.yaml.dvpl\n")
                 append("Fonts → Jost-Light.ttf.dvpl\n")
-                append("С замененным шрифтом некоторые надписи в интерфейсе игры могут отображаться некорректно.")
+                append("С замененным шрифтом некоторые надписи в интерфейсе игры могут отображаться некорректно.\n")
+                append("Чтобы вернуть поведение по умолчанию, просто удалите эти файлы.")
             }
         }
     }
-    Text(
-        text = annotated,
-        style = MaterialTheme.typography.bodyMedium.copy(
-            textAlign = textAlign,
-            color = bodyColor,
-        ),
+    Column(
         modifier = Modifier.fillMaxWidth(),
-    )
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = if (textAlign == TextAlign.Center) {
+            Alignment.CenterHorizontally
+        } else {
+            Alignment.Start
+        },
+    ) {
+        Text(
+            text = annotated,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                textAlign = textAlign,
+                color = bodyColor,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TextButton(onClick = onShowCopyHelp) {
+            Text("Как скопировать файлы")
+        }
+    }
+}
+
+@Composable
+private fun GameFilesCopyHelpDescription(
+    textAlign: TextAlign,
+    onOpenTanksFolder: () -> Unit,
+    onExportFiles: () -> Unit,
+) {
+    val linkColor = MaterialTheme.colorScheme.primary
+    val bodyColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
+    val packsPath = "${GamePacksHelper.TANKS_PACKS_RELATIVE_PATH}/"
+    val exportPath = "Android/data/ru.xvmblitz.android/files/game_packs/"
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = if (textAlign == TextAlign.Center) {
+            Alignment.CenterHorizontally
+        } else {
+            Alignment.Start
+        },
+    ) {
+        Text(
+            text = "Автоматически положить файлы в каталог игры нельзя из‑за ограничений Android. " +
+                "Скопируйте их вручную одним из способов ниже.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = bodyColor,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "Способ 1. С телефона",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = bodyColor)) {
+                    append("1. Нажмите «Сохранить файлы» — они появятся в\n")
+                    append(exportPath)
+                    append("\nуже с папками UI/Screens3, UI/Screens/Battle и Fonts.\n")
+                    append("2. Откройте папку игры ")
+                }
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "tanks_folder_help",
+                        styles = TextLinkStyles(
+                            style = SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        ),
+                        linkInteractionListener = { onOpenTanksFolder() },
+                    ),
+                ) {
+                    append(packsPath)
+                }
+                withStyle(SpanStyle(color = bodyColor)) {
+                    append("\n3. Скопируйте туда содержимое game_packs (папки UI и Fonts), " +
+                        "сохраняя структуру.")
+                }
+            },
+            style = MaterialTheme.typography.bodyMedium.copy(textAlign = textAlign),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "Способ 2. Через USB с ПК",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "1. Подключите телефон к компьютеру (режим передачи файлов).\n" +
+                "2. На ПК откройте $exportPath\n" +
+                "3. Скопируйте папки UI и Fonts в\n$packsPath\n" +
+                "с сохранением структуры подпапок.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = bodyColor,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "Чтобы вернуть поведение по умолчанию, просто удалите эти файлы из папки packs игры.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = bodyColor,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedButton(onClick = onExportFiles) {
+            Text("Сохранить файлы")
+        }
+    }
 }
 
 @Composable
@@ -587,49 +755,61 @@ private fun GuideIllustrationBox(
 @Composable
 private fun GameFilesIllustration() {
     val pulse by rememberInfiniteTransition(label = "files").animateFloat(
-        initialValue = 0.94f,
-        targetValue = 1.04f,
+        initialValue = 0.97f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
         label = "files-pulse",
     )
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
-            .scale(pulse),
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            .padding(8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = "packs/",
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-        )
-        GameFilePathRow("UI/Screens3/", "Font.style.dvpl")
-        GameFilePathRow("UI/Screens/Battle/", "BattleLoadingScreen.yaml.dvpl")
-        GameFilePathRow("Fonts/", "Jost-Light.ttf.dvpl")
-        Text(
-            text = "Без файлов распознавание почти не работает",
-            color = MaterialTheme.colorScheme.error,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .scale(pulse),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(
+                text = "packs/",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+            )
+            GameFilePathRow("UI/Screens3/", "Font.style.dvpl")
+            GameFilePathRow("UI/Screens/Battle/", "BattleLoadingScreen.yaml.dvpl")
+            GameFilePathRow("Fonts/", "Jost-Light.ttf.dvpl")
+            Text(
+                text = "Без замены файлов получение статистики работает нестабильно",
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 11.sp,
+            )
+        }
     }
 }
 
 @Composable
 private fun GameFilePathRow(folder: String, file: String) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
-        Text(folder, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), fontSize = 10.sp)
-        Text(file, color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+        Text(folder, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), fontSize = 9.sp)
+        Text(
+            file,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
     }
 }
 

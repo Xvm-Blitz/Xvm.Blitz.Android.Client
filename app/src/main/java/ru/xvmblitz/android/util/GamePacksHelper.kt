@@ -14,19 +14,35 @@ object GamePacksHelper {
     private const val ASSETS_DIR = "game_packs"
     private const val OUTPUT_DIR_NAME = "game_packs"
 
+    private data class PackFile(
+        val assetName: String,
+        val relativePath: String,
+    )
+
     private val PackFiles = listOf(
-        "Font.style.dvpl",
-        "BattleLoadingScreen.yaml.dvpl",
-        "Jost-Light.ttf.dvpl",
+        PackFile(
+            assetName = "Font.style.dvpl",
+            relativePath = "UI/Screens3/Font.style.dvpl",
+        ),
+        PackFile(
+            assetName = "BattleLoadingScreen.yaml.dvpl",
+            relativePath = "UI/Screens/Battle/BattleLoadingScreen.yaml.dvpl",
+        ),
+        PackFile(
+            assetName = "Jost-Light.ttf.dvpl",
+            relativePath = "Fonts/Jost-Light.ttf.dvpl",
+        ),
     )
 
     fun exportPackFiles(context: Context): File {
         val outputDir = File(context.getExternalFilesDir(null), OUTPUT_DIR_NAME).apply {
             mkdirs()
         }
-        PackFiles.forEach { fileName ->
-            context.assets.open("$ASSETS_DIR/$fileName").use { input ->
-                File(outputDir, fileName).outputStream().use { output ->
+        PackFiles.forEach { packFile ->
+            val targetFile = File(outputDir, packFile.relativePath)
+            targetFile.parentFile?.mkdirs()
+            context.assets.open("$ASSETS_DIR/${packFile.assetName}").use { input ->
+                targetFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
@@ -60,7 +76,7 @@ object GamePacksHelper {
         }
 
         val authority = "${context.packageName}.fileprovider"
-        val files = folder.listFiles().orEmpty()
+        val files = folder.walkTopDown().filter { file -> file.isFile }.toList()
         if (files.isEmpty()) {
             return false
         }

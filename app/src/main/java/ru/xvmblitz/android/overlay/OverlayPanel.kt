@@ -208,10 +208,10 @@ private fun PlayerRow(
         if (mirroredColumns) {
             CompactCell(
                 text = cells[0],
-                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.End),
+                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
                 modifier = Modifier.width(columnWidths.winRate),
                 color = if (player.isMissing) Color.White else winRateColor(player.winRate),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Center,
             )
             CompactCell(
                 text = cells[1],
@@ -252,10 +252,10 @@ private fun PlayerRow(
             )
             CompactCell(
                 text = cells[3],
-                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.Start),
+                textStyle = textStyle.copy(fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
                 modifier = Modifier.width(columnWidths.winRate),
                 color = if (player.isMissing) Color.White else winRateColor(player.winRate),
-                textAlign = TextAlign.Start,
+                textAlign = TextAlign.Center,
             )
         }
     }

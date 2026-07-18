@@ -4,11 +4,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.xvmblitz.android.domain.PlayerSlot
 
-const val OverlayWinRateColumnChars = 5
+const val OverlayWinRateColumnChars = 6
 const val OverlayBattlesColumnChars = 4
 private const val OverlayNicknameColumnWeight = 2.4f
 private const val OverlayTankColumnWeight = 1.2f
 private const val OverlayColumnGapCount = 3
+private const val OverlayDigitWidthFactor = 0.58f
 
 data class OverlayColumnWidths(
     val nickname: Dp,
@@ -24,7 +25,7 @@ fun overlayColumnWidths(
     fontSizeSp: Float,
     rowScaleX: Float,
 ): OverlayColumnWidths {
-    val digitWidthDp = fontSizeSp * 0.62f
+    val digitWidthDp = fontSizeSp * OverlayDigitWidthFactor
     val winRateDp = digitWidthDp * OverlayWinRateColumnChars
     val battlesDp = digitWidthDp * OverlayBattlesColumnChars
     val cellSpacingDp = 4f * rowScaleX
@@ -49,9 +50,9 @@ fun overlayColumnWidths(
 
 fun formatWinRate(winRate: Double): String {
     return if (winRate >= 99.995) {
-        "100"
+        "100%"
     } else {
-        String.format("%.2f", winRate)
+        String.format("%.2f%%", winRate)
     }
 }
 
