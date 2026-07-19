@@ -64,13 +64,18 @@ class ScreenCaptureSession(
     suspend fun captureJpeg(): ByteArray {
         check(!closed) { "ScreenCaptureSession is closed" }
         return captureMutex.withLock {
-            withTimeout(CAPTURE_TIMEOUT) {
-                captureJpegLocked()
+            val bitmap = withTimeout(FRAME_WAIT_TIMEOUT) {
+                awaitUsableBitmap()
+            }
+            try {
+                bitmap.toGrayscaleJpegBytes()
+            } finally {
+                bitmap.recycle()
             }
         }
     }
 
-    private suspend fun captureJpegLocked(): ByteArray {
+    private suspend fun awaitUsableBitmap(): Bitmap {
         val imageReader = ImageReader.newInstance(
             width,
             height,
@@ -81,15 +86,17 @@ class ScreenCaptureSession(
         try {
             return suspendCancellableCoroutine { continuation ->
                 val completed = AtomicBoolean(false)
+                var acceptedFrames = 0
 
-                fun complete(result: Result<ByteArray>) {
+                fun complete(result: Result<Bitmap>) {
                     if (!completed.compareAndSet(false, true)) {
+                        result.getOrNull()?.recycle()
                         return
                     }
                     imageReader.setOnImageAvailableListener(null, null)
                     result.fold(
-                        onSuccess = { bytes ->
-                            continuation.resume(bytes) { _, _, _ -> }
+                        onSuccess = { bitmap ->
+                            continuation.resume(bitmap) { _, value, _ -> value.recycle() }
                         },
                         onFailure = { error ->
                             continuation.resumeWithException(error)
@@ -103,14 +110,22 @@ class ScreenCaptureSession(
                             return@setOnImageAvailableListener
                         }
                         val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-                        val encoded = try {
-                            Result.success(image.toGrayscaleJpegBytes(width, height))
+                        try {
+                            acceptedFrames += 1
+                            if (acceptedFrames <= FRAMES_TO_SKIP) {
+                                return@setOnImageAvailableListener
+                            }
+                            val bitmap = image.toBitmap(width, height)
+                            if (bitmap.isMostlyBlack()) {
+                                bitmap.recycle()
+                                return@setOnImageAvailableListener
+                            }
+                            complete(Result.success(bitmap))
                         } catch (exception: Exception) {
-                            Result.failure(exception)
+                            complete(Result.failure(exception))
                         } finally {
                             image.close()
                         }
-                        complete(encoded)
                     },
                     handler,
                 )
@@ -152,12 +167,13 @@ class ScreenCaptureSession(
     }
 
     companion object {
-        private const val IMAGE_READER_MAX_IMAGES = 2
-        private val CAPTURE_TIMEOUT = 500.milliseconds
+        private const val IMAGE_READER_MAX_IMAGES = 3
+        private const val FRAMES_TO_SKIP = 1
+        private val FRAME_WAIT_TIMEOUT = 500.milliseconds
     }
 }
 
-private fun Image.toGrayscaleJpegBytes(width: Int, height: Int): ByteArray {
+private fun Image.toBitmap(width: Int, height: Int): Bitmap {
     val plane = planes[0]
     val buffer = plane.buffer
     val pixelStride = plane.pixelStride
@@ -168,17 +184,38 @@ private fun Image.toGrayscaleJpegBytes(width: Int, height: Int): ByteArray {
     val paddedWidth = width + rowPadding / pixelStride
     val source = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
     source.copyPixelsFromBuffer(buffer)
-    val colorBitmap = if (paddedWidth == width) {
+    return if (paddedWidth == width) {
         source
     } else {
         Bitmap.createBitmap(source, 0, 0, width, height).also { source.recycle() }
     }
+}
 
-    val grayscaleBitmap = colorBitmap.toGrayscale()
-    if (grayscaleBitmap !== colorBitmap) {
-        colorBitmap.recycle()
+private fun Bitmap.isMostlyBlack(): Boolean {
+    val stepX = (width / 32).coerceAtLeast(1)
+    val stepY = (height / 32).coerceAtLeast(1)
+    var maxLuminance = 0.0
+    var y = 0
+    while (y < height) {
+        var x = 0
+        while (x < width) {
+            val color = getPixel(x, y)
+            val luminance =
+                (0.299 * ((color shr 16) and 0xFF)) +
+                    (0.587 * ((color shr 8) and 0xFF)) +
+                    (0.114 * (color and 0xFF))
+            if (luminance > maxLuminance) {
+                maxLuminance = luminance
+            }
+            x += stepX
+        }
+        y += stepY
     }
+    return maxLuminance < 16.0
+}
 
+private fun Bitmap.toGrayscaleJpegBytes(): ByteArray {
+    val grayscaleBitmap = toGrayscale()
     return try {
         val stream = ByteArrayOutputStream(width * height / 2)
         if (!grayscaleBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
@@ -194,7 +231,16 @@ private fun Bitmap.toGrayscale(): Bitmap {
     val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(result)
     val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        colorFilter = ColorMatrixColorFilter(
+            ColorMatrix(
+                floatArrayOf(
+                    0.299f, 0.587f, 0.114f, 0f, 0f,
+                    0.299f, 0.587f, 0.114f, 0f, 0f,
+                    0.299f, 0.587f, 0.114f, 0f, 0f,
+                    0f, 0f, 0f, 1f, 0f,
+                ),
+            ),
+        )
     }
     canvas.drawBitmap(this, 0f, 0f, paint)
     return result

@@ -31,8 +31,10 @@ import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.data.api.BattleStatisticsDto
 import ru.xvmblitz.android.overlay.OverlayService
+import retrofit2.HttpException
 import ru.xvmblitz.android.util.AppAlertNotifier
 import ru.xvmblitz.android.util.CaptureAccessGuard
+import ru.xvmblitz.android.util.HttpErrorMessages
 
 class CaptureForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -93,7 +95,7 @@ class CaptureForegroundService : Service() {
                             CaptureEvents.emit(CaptureEvents.Result.Success)
                         }
                         is RecognizeResult.AccessDenied -> notifyAccessDenied(recognized.message)
-                        RecognizeResult.Failed -> notifyStatisticsFailed()
+                        is RecognizeResult.Failed -> notifyAccessDenied(recognized.message)
                     }
                 }
             } catch (exception: TimeoutCancellationException) {
@@ -142,6 +144,7 @@ class CaptureForegroundService : Service() {
         }
 
         var accessDeniedMessage: String? = null
+        var lastErrorMessage: String? = null
         var battle: BattleStatisticsDto? = null
         try {
             for (screenshot in screenshots) {
@@ -149,6 +152,7 @@ class CaptureForegroundService : Service() {
                     battle = upload(screenshot)
                     break
                 } catch (_: TimeoutCancellationException) {
+                    lastErrorMessage = STATISTICS_FAILED_MESSAGE
                 } catch (exception: CancellationException) {
                     throw exception
                 } catch (exception: Exception) {
@@ -157,6 +161,10 @@ class CaptureForegroundService : Service() {
                         accessDeniedMessage = denied.message
                         break
                     }
+                    lastErrorMessage = (exception as? HttpException)
+                        ?.let(HttpErrorMessages::fromHttpException)
+                        ?: exception.message
+                        ?: STATISTICS_FAILED_MESSAGE
                 }
             }
         } finally {
@@ -166,12 +174,8 @@ class CaptureForegroundService : Service() {
         when {
             battle != null -> RecognizeResult.Success(battle)
             accessDeniedMessage != null -> RecognizeResult.AccessDenied(accessDeniedMessage)
-            else -> RecognizeResult.Failed
+            else -> RecognizeResult.Failed(lastErrorMessage ?: STATISTICS_FAILED_MESSAGE)
         }
-    }
-
-    private suspend fun notifyStatisticsFailed() {
-        notifyAccessDenied(STATISTICS_FAILED_MESSAGE)
     }
 
     private suspend fun notifyAccessDenied(message: String) {
@@ -212,7 +216,7 @@ class CaptureForegroundService : Service() {
     private sealed interface RecognizeResult {
         data class Success(val battle: BattleStatisticsDto) : RecognizeResult
         data class AccessDenied(val message: String) : RecognizeResult
-        data object Failed : RecognizeResult
+        data class Failed(val message: String) : RecognizeResult
     }
 
     companion object {

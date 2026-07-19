@@ -32,9 +32,16 @@ object CaptureAccessGuard {
     fun classifyError(exception: Throwable): CaptureAccessResult.Denied? {
         val httpException = exception as? HttpException
         if (httpException != null) {
-            val message = HttpErrorMessages.fromHttpException(httpException)
-            if (message != null) {
-                return CaptureAccessResult.Denied(message)
+            return when (httpException.code()) {
+                401, 403 -> CaptureAccessResult.Denied(
+                    HttpErrorMessages.fromHttpException(httpException)
+                        ?: AppAlertNotifier.DEFAULT_API_KEY_MESSAGE,
+                )
+                402, 429 -> CaptureAccessResult.Denied(
+                    HttpErrorMessages.fromHttpException(httpException)
+                        ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
+                )
+                else -> null
             }
         }
         val message = exception.message.orEmpty().lowercase()
