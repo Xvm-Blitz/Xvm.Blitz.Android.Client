@@ -1,0 +1,97 @@
+package ru.xvmblitz.android.util
+
+import java.time.Duration
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.serialization.json.Json
+import retrofit2.HttpException
+import ru.xvmblitz.android.data.api.ProblemDetailsDto
+
+object HttpErrorMessages {
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
+    private val retryAfterDateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+
+    fun fromHttpException(exception: HttpException): String? {
+        val code = exception.code()
+        if (code !in 400..499) {
+            return null
+        }
+
+        val response = exception.response()
+        val body = runCatching { response?.errorBody()?.string().orEmpty() }.getOrDefault("")
+        val problemDetails = parseProblemDetails(body)
+        val baseMessage = resolveBaseMessage(problemDetails)
+            ?: AppAlertNotifier.fallbackMessageForStatus(code)
+
+        val retryAfter = resolveRetryAfter(
+            problemDetails = problemDetails,
+            retryAfterHeader = response?.headers()?.get("Retry-After"),
+        )
+        val retryText = formatRetryAfter(retryAfter) ?: return baseMessage
+        return "$baseMessage\n$retryText"
+    }
+
+    fun parseProblemDetails(body: String): ProblemDetailsDto? {
+        if (body.isBlank()) {
+            return null
+        }
+        return runCatching { json.decodeFromString<ProblemDetailsDto>(body) }.getOrNull()
+    }
+
+    private fun resolveBaseMessage(problemDetails: ProblemDetailsDto?): String? {
+        if (problemDetails == null) {
+            return null
+        }
+        return listOfNotNull(
+            problemDetails.detail?.takeIf(String::isNotBlank),
+            problemDetails.error?.takeIf(String::isNotBlank),
+            problemDetails.title?.takeIf(String::isNotBlank),
+            problemDetails.reason?.takeIf(String::isNotBlank),
+        ).firstOrNull()
+    }
+
+    private fun resolveRetryAfter(
+        problemDetails: ProblemDetailsDto?,
+        retryAfterHeader: String?,
+    ): OffsetDateTime? {
+        problemDetails?.retryAfter
+            ?.takeIf(String::isNotBlank)
+            ?.let { raw ->
+                runCatching { OffsetDateTime.parse(raw) }.getOrNull()
+            }
+            ?.let { return it }
+
+        val header = retryAfterHeader?.trim().orEmpty()
+        if (header.isEmpty()) {
+            return null
+        }
+        header.toLongOrNull()?.let { seconds ->
+            return OffsetDateTime.now().plusSeconds(seconds.coerceAtLeast(0L))
+        }
+        return runCatching { OffsetDateTime.parse(header) }.getOrNull()
+    }
+
+    private fun formatRetryAfter(retryAfter: OffsetDateTime?): String? {
+        if (retryAfter == null) {
+            return null
+        }
+        val localDateTime = retryAfter.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
+        val now = OffsetDateTime.now()
+        if (!retryAfter.isAfter(now)) {
+            return "Можно повторить сейчас"
+        }
+        val remaining = Duration.between(now, retryAfter)
+        val remainingText = when {
+            remaining.toMinutes() < 1L -> "менее минуты"
+            remaining.toHours() < 1L -> "${remaining.toMinutes()} мин"
+            remaining.toDays() < 1L -> "${remaining.toHours()} ч"
+            else -> "${remaining.toDays()} дн"
+        }
+        return "Повторите после ${retryAfterDateTimeFormatter.format(localDateTime)} ($remainingText)"
+    }
+}

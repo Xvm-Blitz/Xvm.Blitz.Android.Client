@@ -50,4 +50,13 @@ object AppAlertNotifier {
 
     const val DEFAULT_API_KEY_MESSAGE = "Необходимо настроить API ключ"
     const val QUOTA_EXHAUSTED_MESSAGE = "Квота исчерпана. Необходимо настроить API ключ"
+    const val REQUEST_DENIED_MESSAGE = "Запрос отклонён"
+
+    fun fallbackMessageForStatus(statusCode: Int): String {
+        return when (statusCode) {
+            401, 403 -> DEFAULT_API_KEY_MESSAGE
+            402, 429 -> QUOTA_EXHAUSTED_MESSAGE
+            else -> REQUEST_DENIED_MESSAGE
+        }
+    }
 }

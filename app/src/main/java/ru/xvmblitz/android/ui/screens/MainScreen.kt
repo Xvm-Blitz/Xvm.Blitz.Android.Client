@@ -263,10 +263,14 @@ fun MainScreen(
             }
         }
 
-        AdaptiveOutlinedButton(
+        AdaptiveButton(
             text = "Закрыть приложение",
             onClick = onCloseApp,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
         )
 
         Spacer(modifier = Modifier.height(8.dp))

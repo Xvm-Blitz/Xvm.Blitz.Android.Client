@@ -9,31 +9,32 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.max
 import kotlin.math.sin
 
 enum class FabErrorSide {
@@ -92,43 +93,94 @@ fun OverlayFab(
     var buttonSize by remember { mutableStateOf(IntSize.Zero) }
     var popupSize by remember { mutableStateOf(IntSize.Zero) }
     val gapPx = with(density) { 6.dp.roundToPx() }
+    val estimatedPopupSize = remember(density) {
+        IntSize(
+            width = with(density) { 180.dp.roundToPx() },
+            height = with(density) { 36.dp.roundToPx() },
+        )
+    }
     val backgroundColor by animateColorAsState(
         targetValue = if (isError) Color(0xE6C62828) else Color(0xE63D7EA6),
         animationSpec = tween(160),
         label = "fab-color",
     )
     val showError = !errorMessage.isNullOrBlank()
+    val effectivePopupSize = if (popupSize == IntSize.Zero) estimatedPopupSize else popupSize
     val errorSide = remember(
         showError,
         buttonX,
         buttonY,
         buttonSize,
-        popupSize,
+        effectivePopupSize,
         screenWidthPx,
         screenHeightPx,
+        gapPx,
     ) {
         if (!showError || buttonSize == IntSize.Zero) {
             FabErrorSide.Top
         } else {
-            val estimatedPopup = if (popupSize == IntSize.Zero) {
-                IntSize(
-                    width = with(density) { 180.dp.roundToPx() },
-                    height = with(density) { 36.dp.roundToPx() },
-                )
-            } else {
-                popupSize
-            }
             resolveFabErrorSide(
                 buttonX = buttonX,
                 buttonY = buttonY,
                 buttonWidth = buttonSize.width,
                 buttonHeight = buttonSize.height,
-                popupWidth = estimatedPopup.width,
-                popupHeight = estimatedPopup.height,
+                popupWidth = effectivePopupSize.width,
+                popupHeight = effectivePopupSize.height,
                 screenWidth = screenWidthPx,
                 screenHeight = screenHeightPx,
                 gapPx = gapPx,
             )
+        }
+    }
+
+    val buttonOffsetX = when {
+        !showError || buttonSize == IntSize.Zero -> 0
+        errorSide == FabErrorSide.Left -> effectivePopupSize.width + gapPx
+        errorSide == FabErrorSide.Top || errorSide == FabErrorSide.Bottom ->
+            max(0, (effectivePopupSize.width - buttonSize.width) / 2)
+        else -> 0
+    }
+    val buttonOffsetY = when {
+        !showError || buttonSize == IntSize.Zero -> 0
+        errorSide == FabErrorSide.Top -> effectivePopupSize.height + gapPx
+        else -> 0
+    }
+    val contentWidth = when {
+        !showError || buttonSize == IntSize.Zero -> if (buttonSize == IntSize.Zero) 0 else buttonSize.width
+        errorSide == FabErrorSide.Left || errorSide == FabErrorSide.Right ->
+            buttonSize.width + gapPx + effectivePopupSize.width
+        else -> max(buttonSize.width, effectivePopupSize.width)
+    }
+    val contentHeight = when {
+        !showError || buttonSize == IntSize.Zero -> if (buttonSize == IntSize.Zero) 0 else buttonSize.height
+        errorSide == FabErrorSide.Top || errorSide == FabErrorSide.Bottom ->
+            buttonSize.height + gapPx + effectivePopupSize.height
+        else -> max(buttonSize.height, effectivePopupSize.height)
+    }
+    val popupOffsetX = when {
+        !showError || buttonSize == IntSize.Zero -> 0
+        errorSide == FabErrorSide.Left -> 0
+        errorSide == FabErrorSide.Right -> buttonOffsetX + buttonSize.width + gapPx
+        else -> max(0, (contentWidth - effectivePopupSize.width) / 2)
+    }
+    val popupOffsetY = when {
+        !showError || buttonSize == IntSize.Zero -> 0
+        errorSide == FabErrorSide.Top -> 0
+        errorSide == FabErrorSide.Bottom -> buttonOffsetY + buttonSize.height + gapPx
+        else -> max(0, (contentHeight - effectivePopupSize.height) / 2)
+    }
+
+    SideEffect {
+        if (!showError) {
+            onWindowOriginOffset(0, 0)
+        } else {
+            onWindowOriginOffset(-buttonOffsetX, -buttonOffsetY)
+        }
+    }
+
+    LaunchedEffect(showError) {
+        if (!showError) {
+            popupSize = IntSize.Zero
         }
     }
 
@@ -150,29 +202,33 @@ fun OverlayFab(
         isError = false
     }
 
-    LaunchedEffect(showError, errorSide, popupSize, buttonSize) {
-        if (!showError || popupSize == IntSize.Zero || buttonSize == IntSize.Zero) {
-            onWindowOriginOffset(0, 0)
-            return@LaunchedEffect
-        }
-        val offsetX = when (errorSide) {
-            FabErrorSide.Left -> -(popupSize.width + gapPx)
-            FabErrorSide.Right -> 0
-            FabErrorSide.Top, FabErrorSide.Bottom -> 0
-        }
-        val offsetY = when (errorSide) {
-            FabErrorSide.Top -> -(popupSize.height + gapPx)
-            FabErrorSide.Bottom -> 0
-            FabErrorSide.Left, FabErrorSide.Right -> 0
-        }
-        onWindowOriginOffset(offsetX, offsetY)
-    }
+    Box(
+        modifier = if (contentWidth > 0 && contentHeight > 0) {
+            modifier
+                .width(with(density) { contentWidth.toDp() })
+                .height(with(density) { contentHeight.toDp() })
+        } else {
+            modifier
+        },
+    ) {
+        Text(
+            text = "Статистика",
+            color = Color.White,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .offset { IntOffset(buttonOffsetX, buttonOffsetY) }
+                .onSizeChanged { buttonSize = it }
+                .offset(x = shake.value.dp)
+                .background(backgroundColor, RoundedCornerShape(12.dp))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+        )
 
-    val errorPopup: @Composable () -> Unit = {
         AnimatedVisibility(
             visible = showError,
             enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.92f),
             exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.92f),
+            modifier = Modifier.offset { IntOffset(popupOffsetX, popupOffsetY) },
         ) {
             Text(
                 text = errorMessage.orEmpty(),
@@ -186,68 +242,6 @@ fun OverlayFab(
                     .background(Color(0xF2C62828), RoundedCornerShape(10.dp))
                     .padding(horizontal = 10.dp, vertical = 7.dp),
             )
-        }
-    }
-
-    val buttonLabel: @Composable () -> Unit = {
-        Text(
-            text = "Статистика",
-            color = Color.White,
-            fontSize = 8.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .onSizeChanged { buttonSize = it }
-                .offset(x = shake.value.dp)
-                .background(backgroundColor, RoundedCornerShape(12.dp))
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-        )
-    }
-
-    when {
-        !showError -> {
-            Box(modifier = modifier, contentAlignment = Alignment.Center) {
-                buttonLabel()
-            }
-        }
-        errorSide == FabErrorSide.Top -> {
-            Column(
-                modifier = modifier,
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                errorPopup()
-                buttonLabel()
-            }
-        }
-        errorSide == FabErrorSide.Bottom -> {
-            Column(
-                modifier = modifier,
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                buttonLabel()
-                errorPopup()
-            }
-        }
-        errorSide == FabErrorSide.Left -> {
-            Row(
-                modifier = modifier,
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                errorPopup()
-                buttonLabel()
-            }
-        }
-        else -> {
-            Row(
-                modifier = modifier,
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                buttonLabel()
-                errorPopup()
-            }
         }
     }
 }

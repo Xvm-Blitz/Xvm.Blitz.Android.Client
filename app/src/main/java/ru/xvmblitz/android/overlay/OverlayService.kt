@@ -291,7 +291,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         vibrateError()
         fabErrorHideJob?.cancel()
         fabErrorHideJob = scope.launch {
-            delay(2_800)
+            delay(4_500)
             fabErrorMessage.value = null
         }
         setHiddenForCapture(false)
