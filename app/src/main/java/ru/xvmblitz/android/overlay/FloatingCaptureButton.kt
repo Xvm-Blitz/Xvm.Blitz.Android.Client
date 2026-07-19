@@ -28,8 +28,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -55,25 +58,44 @@ fun resolveFabErrorSide(
     screenHeight: Int,
     gapPx: Int,
 ): FabErrorSide {
-    val spaceTop = buttonY
-    val spaceBottom = screenHeight - (buttonY + buttonHeight)
-    val spaceLeft = buttonX
-    val spaceRight = screenWidth - (buttonX + buttonWidth)
-    val neededVertical = popupHeight + gapPx
-    val neededHorizontal = popupWidth + gapPx
-    val candidates = listOf(
-        FabErrorSide.Top to (spaceTop >= neededVertical),
-        FabErrorSide.Bottom to (spaceBottom >= neededVertical),
-        FabErrorSide.Left to (spaceLeft >= neededHorizontal),
-        FabErrorSide.Right to (spaceRight >= neededHorizontal),
+    if (popupWidth <= 0 || popupHeight <= 0 || screenWidth <= 0 || screenHeight <= 0) {
+        return FabErrorSide.Top
+    }
+
+    fun popupOrigin(side: FabErrorSide): IntOffset {
+        val centeredLeft = buttonX + (buttonWidth - popupWidth) / 2
+        val centeredTop = buttonY + (buttonHeight - popupHeight) / 2
+        return when (side) {
+            FabErrorSide.Top -> IntOffset(centeredLeft, buttonY - gapPx - popupHeight)
+            FabErrorSide.Bottom -> IntOffset(centeredLeft, buttonY + buttonHeight + gapPx)
+            FabErrorSide.Left -> IntOffset(buttonX - gapPx - popupWidth, centeredTop)
+            FabErrorSide.Right -> IntOffset(buttonX + buttonWidth + gapPx, centeredTop)
+        }
+    }
+
+    fun fitsOnScreen(origin: IntOffset): Boolean {
+        return origin.x >= 0 &&
+            origin.y >= 0 &&
+            origin.x + popupWidth <= screenWidth &&
+            origin.y + popupHeight <= screenHeight
+    }
+
+    fun overflowAmount(origin: IntOffset): Int {
+        val overflowLeft = max(0, -origin.x)
+        val overflowTop = max(0, -origin.y)
+        val overflowRight = max(0, origin.x + popupWidth - screenWidth)
+        val overflowBottom = max(0, origin.y + popupHeight - screenHeight)
+        return overflowLeft + overflowTop + overflowRight + overflowBottom
+    }
+
+    val sides = listOf(
+        FabErrorSide.Top,
+        FabErrorSide.Bottom,
+        FabErrorSide.Left,
+        FabErrorSide.Right,
     )
-    candidates.firstOrNull { (_, fits) -> fits }?.let { (side, _) -> return side }
-    return listOf(
-        FabErrorSide.Top to spaceTop,
-        FabErrorSide.Bottom to spaceBottom,
-        FabErrorSide.Left to spaceLeft,
-        FabErrorSide.Right to spaceRight,
-    ).maxBy { (_, space) -> space }.first
+    sides.firstOrNull { side -> fitsOnScreen(popupOrigin(side)) }?.let { return it }
+    return sides.minBy { side -> overflowAmount(popupOrigin(side)) }
 }
 
 @Composable
@@ -88,15 +110,34 @@ fun OverlayFab(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
     val shake = remember { Animatable(0f) }
     var isError by remember { mutableStateOf(false) }
     var buttonSize by remember { mutableStateOf(IntSize.Zero) }
     var popupSize by remember { mutableStateOf(IntSize.Zero) }
     val gapPx = with(density) { 6.dp.roundToPx() }
-    val estimatedPopupSize = remember(density) {
+    val errorTextStyle = remember {
+        TextStyle(
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            color = Color.White,
+        )
+    }
+    val measuredPopupSize = remember(errorMessage, density, textMeasurer) {
+        val message = errorMessage?.takeIf(String::isNotBlank) ?: return@remember IntSize.Zero
+        val maxWidthPx = with(density) { 180.dp.roundToPx() }
+        val paddingHorizontalPx = with(density) { 20.dp.roundToPx() }
+        val paddingVerticalPx = with(density) { 14.dp.roundToPx() }
+        val textMaxWidth = (maxWidthPx - paddingHorizontalPx).coerceAtLeast(1)
+        val textLayout = textMeasurer.measure(
+            text = message,
+            style = errorTextStyle,
+            constraints = Constraints(maxWidth = textMaxWidth),
+        )
         IntSize(
-            width = with(density) { 180.dp.roundToPx() },
-            height = with(density) { 36.dp.roundToPx() },
+            width = (textLayout.size.width + paddingHorizontalPx).coerceAtMost(maxWidthPx),
+            height = textLayout.size.height + paddingVerticalPx,
         )
     }
     val backgroundColor by animateColorAsState(
@@ -105,7 +146,14 @@ fun OverlayFab(
         label = "fab-color",
     )
     val showError = !errorMessage.isNullOrBlank()
-    val effectivePopupSize = if (popupSize == IntSize.Zero) estimatedPopupSize else popupSize
+    val effectivePopupSize = if (!showError) {
+        IntSize.Zero
+    } else {
+        IntSize(
+            width = max(measuredPopupSize.width, popupSize.width),
+            height = max(measuredPopupSize.height, popupSize.height),
+        )
+    }
     val errorSide = remember(
         showError,
         buttonX,
@@ -116,7 +164,7 @@ fun OverlayFab(
         screenHeightPx,
         gapPx,
     ) {
-        if (!showError || buttonSize == IntSize.Zero) {
+        if (!showError || buttonSize == IntSize.Zero || effectivePopupSize == IntSize.Zero) {
             FabErrorSide.Top
         } else {
             resolveFabErrorSide(
@@ -133,45 +181,48 @@ fun OverlayFab(
         }
     }
 
+    val hasErrorLayout = showError && buttonSize != IntSize.Zero && effectivePopupSize != IntSize.Zero
     val buttonOffsetX = when {
-        !showError || buttonSize == IntSize.Zero -> 0
+        !hasErrorLayout -> 0
         errorSide == FabErrorSide.Left -> effectivePopupSize.width + gapPx
         errorSide == FabErrorSide.Top || errorSide == FabErrorSide.Bottom ->
             max(0, (effectivePopupSize.width - buttonSize.width) / 2)
         else -> 0
     }
     val buttonOffsetY = when {
-        !showError || buttonSize == IntSize.Zero -> 0
+        !hasErrorLayout -> 0
         errorSide == FabErrorSide.Top -> effectivePopupSize.height + gapPx
+        errorSide == FabErrorSide.Left || errorSide == FabErrorSide.Right ->
+            max(0, (effectivePopupSize.height - buttonSize.height) / 2)
         else -> 0
     }
     val contentWidth = when {
-        !showError || buttonSize == IntSize.Zero -> if (buttonSize == IntSize.Zero) 0 else buttonSize.width
+        !hasErrorLayout -> if (buttonSize == IntSize.Zero) 0 else buttonSize.width
         errorSide == FabErrorSide.Left || errorSide == FabErrorSide.Right ->
             buttonSize.width + gapPx + effectivePopupSize.width
         else -> max(buttonSize.width, effectivePopupSize.width)
     }
     val contentHeight = when {
-        !showError || buttonSize == IntSize.Zero -> if (buttonSize == IntSize.Zero) 0 else buttonSize.height
+        !hasErrorLayout -> if (buttonSize == IntSize.Zero) 0 else buttonSize.height
         errorSide == FabErrorSide.Top || errorSide == FabErrorSide.Bottom ->
             buttonSize.height + gapPx + effectivePopupSize.height
         else -> max(buttonSize.height, effectivePopupSize.height)
     }
     val popupOffsetX = when {
-        !showError || buttonSize == IntSize.Zero -> 0
+        !hasErrorLayout -> 0
         errorSide == FabErrorSide.Left -> 0
         errorSide == FabErrorSide.Right -> buttonOffsetX + buttonSize.width + gapPx
         else -> max(0, (contentWidth - effectivePopupSize.width) / 2)
     }
     val popupOffsetY = when {
-        !showError || buttonSize == IntSize.Zero -> 0
+        !hasErrorLayout -> 0
         errorSide == FabErrorSide.Top -> 0
         errorSide == FabErrorSide.Bottom -> buttonOffsetY + buttonSize.height + gapPx
         else -> max(0, (contentHeight - effectivePopupSize.height) / 2)
     }
 
     SideEffect {
-        if (!showError) {
+        if (!hasErrorLayout) {
             onWindowOriginOffset(0, 0)
         } else {
             onWindowOriginOffset(-buttonOffsetX, -buttonOffsetY)

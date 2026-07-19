@@ -2,8 +2,6 @@ package ru.xvmblitz.android.util
 
 import java.time.Duration
 import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 import ru.xvmblitz.android.data.api.ProblemDetailsDto
@@ -13,8 +11,6 @@ object HttpErrorMessages {
         ignoreUnknownKeys = true
         isLenient = true
     }
-
-    private val retryAfterDateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
 
     fun fromHttpException(exception: HttpException): String? {
         val code = exception.code()
@@ -80,18 +76,11 @@ object HttpErrorMessages {
         if (retryAfter == null) {
             return null
         }
-        val localDateTime = retryAfter.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
         val now = OffsetDateTime.now()
         if (!retryAfter.isAfter(now)) {
             return "Можно повторить сейчас"
         }
-        val remaining = Duration.between(now, retryAfter)
-        val remainingText = when {
-            remaining.toMinutes() < 1L -> "менее минуты"
-            remaining.toHours() < 1L -> "${remaining.toMinutes()} мин"
-            remaining.toDays() < 1L -> "${remaining.toHours()} ч"
-            else -> "${remaining.toDays()} дн"
-        }
-        return "Повторите после ${retryAfterDateTimeFormatter.format(localDateTime)} ($remainingText)"
+        val remainingSeconds = Duration.between(now, retryAfter).toSeconds().coerceAtLeast(1L)
+        return "Повторите через $remainingSeconds секунд"
     }
 }
