@@ -22,7 +22,8 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -64,6 +65,7 @@ class ScreenCaptureSession(
     suspend fun captureJpeg(): ByteArray {
         check(!closed) { "ScreenCaptureSession is closed" }
         return captureMutex.withLock {
+            delay(FRAME_SETTLE_DELAY_MS)
             val bitmap = withTimeout(FRAME_WAIT_TIMEOUT) {
                 awaitUsableBitmap()
             }
@@ -112,7 +114,7 @@ class ScreenCaptureSession(
                         val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                         try {
                             acceptedFrames += 1
-                            if (acceptedFrames <= FRAMES_TO_SKIP) {
+                            if (acceptedFrames < FRAMES_TO_SKIP_BEFORE_CAPTURE) {
                                 return@setOnImageAvailableListener
                             }
                             val bitmap = image.toBitmap(width, height)
@@ -168,8 +170,9 @@ class ScreenCaptureSession(
 
     companion object {
         private const val IMAGE_READER_MAX_IMAGES = 3
-        private const val FRAMES_TO_SKIP = 1
-        private val FRAME_WAIT_TIMEOUT = 500.milliseconds
+        private const val FRAME_SETTLE_DELAY_MS = 150L
+        private const val FRAMES_TO_SKIP_BEFORE_CAPTURE = 2
+        private val FRAME_WAIT_TIMEOUT = 5.seconds
     }
 }
 

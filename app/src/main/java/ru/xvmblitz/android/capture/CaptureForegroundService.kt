@@ -9,7 +9,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlin.time.Duration.Companion.seconds
@@ -67,6 +66,7 @@ class CaptureForegroundService : Service() {
             try {
                 CaptureEvents.emit(CaptureEvents.Result.Loading)
                 OverlayService.hideForCapture(applicationContext)
+                delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
                     val recognized = recognizeWithRetries(
@@ -124,14 +124,10 @@ class CaptureForegroundService : Service() {
         session: ScreenCaptureSession,
         upload: suspend (ByteArray) -> BattleStatisticsDto,
     ): RecognizeResult {
-        val startedAtMs = SystemClock.elapsedRealtime()
         var lastErrorMessage: String? = null
 
-        for (targetDelayMs in CAPTURE_AT_MS) {
-            val waitMs = targetDelayMs - (SystemClock.elapsedRealtime() - startedAtMs)
-            if (waitMs > 0L) {
-                delay(waitMs)
-            }
+        for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
+            delay(attemptDelayMs)
 
             val screenshot = try {
                 session.captureJpeg()
@@ -216,7 +212,7 @@ class CaptureForegroundService : Service() {
         const val EXTRA_DATA = "data"
         private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
         private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
-        private val CAPTURE_AT_MS = listOf(0L, 500L, 1_000L)
+        private val CAPTURE_ATTEMPT_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
         private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()
 
         fun start(context: Context, resultCode: Int, data: Intent) {

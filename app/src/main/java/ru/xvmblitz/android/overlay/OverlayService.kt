@@ -848,6 +848,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val MENU_HIDE_STATS = 1
+        const val OVERLAY_HIDE_DELAY_MS = 400L
         private const val CAPTURE_BUTTON_DRAG_THRESHOLD_DP = 24f
         const val ACTION_TOGGLE = "ru.xvmblitz.android.overlay.TOGGLE"
         const val ACTION_CAPTURE = "ru.xvmblitz.android.overlay.CAPTURE"
