@@ -19,19 +19,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.HttpException
 import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.data.api.BattleStatisticsDto
 import ru.xvmblitz.android.overlay.OverlayService
-import retrofit2.HttpException
 import ru.xvmblitz.android.util.AppAlertNotifier
 import ru.xvmblitz.android.util.CaptureAccessGuard
 import ru.xvmblitz.android.util.HttpErrorMessages
@@ -71,7 +69,7 @@ class CaptureForegroundService : Service() {
                 OverlayService.hideForCapture(applicationContext)
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
-                    val recognized = recognizeWithPreloadedScreenshots(
+                    val recognized = recognizeWithRetries(
                         session = session,
                         upload = { bytes ->
                             val body = bytes.toRequestBody(JPEG_MEDIA_TYPE)
@@ -122,65 +120,53 @@ class CaptureForegroundService : Service() {
         return START_NOT_STICKY
     }
 
-    private suspend fun recognizeWithPreloadedScreenshots(
+    private suspend fun recognizeWithRetries(
         session: ScreenCaptureSession,
         upload: suspend (ByteArray) -> BattleStatisticsDto,
-    ): RecognizeResult = coroutineScope {
-        val screenshots = Channel<ByteArray>(Channel.UNLIMITED)
+    ): RecognizeResult {
         val startedAtMs = SystemClock.elapsedRealtime()
-        val producer = launch {
-            try {
-                for (targetDelayMs in CAPTURE_AT_MS) {
-                    val waitMs = targetDelayMs - (SystemClock.elapsedRealtime() - startedAtMs)
-                    if (waitMs > 0L) {
-                        delay(waitMs)
-                    }
-                    try {
-                        screenshots.send(session.captureJpeg())
-                    } catch (_: TimeoutCancellationException) {
-                    } catch (exception: CancellationException) {
-                        throw exception
-                    } catch (_: Exception) {
-                    }
-                }
-            } finally {
-                screenshots.close()
-            }
-        }
-
-        var accessDeniedMessage: String? = null
         var lastErrorMessage: String? = null
-        var battle: BattleStatisticsDto? = null
-        try {
-            for (screenshot in screenshots) {
-                try {
-                    battle = upload(screenshot)
-                    break
-                } catch (_: TimeoutCancellationException) {
-                    lastErrorMessage = STATISTICS_FAILED_MESSAGE
-                } catch (exception: CancellationException) {
-                    throw exception
-                } catch (exception: Exception) {
-                    val denied = CaptureAccessGuard.classifyError(exception)
-                    if (denied != null) {
-                        accessDeniedMessage = denied.message
-                        break
-                    }
-                    lastErrorMessage = (exception as? HttpException)
-                        ?.let(HttpErrorMessages::fromHttpException)
-                        ?: exception.message
-                        ?: STATISTICS_FAILED_MESSAGE
-                }
+
+        for (targetDelayMs in CAPTURE_AT_MS) {
+            val waitMs = targetDelayMs - (SystemClock.elapsedRealtime() - startedAtMs)
+            if (waitMs > 0L) {
+                delay(waitMs)
             }
-        } finally {
-            producer.cancel()
+
+            val screenshot = try {
+                session.captureJpeg()
+            } catch (_: TimeoutCancellationException) {
+                lastErrorMessage = STATISTICS_FAILED_MESSAGE
+                continue
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                lastErrorMessage = STATISTICS_FAILED_MESSAGE
+                continue
+            }
+
+            try {
+                return RecognizeResult.Success(upload(screenshot))
+            } catch (_: TimeoutCancellationException) {
+                lastErrorMessage = STATISTICS_FAILED_MESSAGE
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                val httpException = exception as? HttpException
+                if (httpException?.code() == 429) {
+                    return RecognizeResult.AccessDenied(
+                        HttpErrorMessages.fromHttpException(httpException)
+                            ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
+                    )
+                }
+                lastErrorMessage = httpException
+                    ?.let(HttpErrorMessages::fromHttpException)
+                    ?: exception.message
+                    ?: STATISTICS_FAILED_MESSAGE
+            }
         }
 
-        when {
-            battle != null -> RecognizeResult.Success(battle)
-            accessDeniedMessage != null -> RecognizeResult.AccessDenied(accessDeniedMessage)
-            else -> RecognizeResult.Failed(lastErrorMessage ?: STATISTICS_FAILED_MESSAGE)
-        }
+        return RecognizeResult.Failed(lastErrorMessage ?: STATISTICS_FAILED_MESSAGE)
     }
 
     private suspend fun notifyAccessDenied(message: String) {
