@@ -66,7 +66,6 @@ class CaptureForegroundService : Service() {
             try {
                 CaptureEvents.emit(CaptureEvents.Result.Loading)
                 OverlayService.hideForCapture(applicationContext)
-                delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
                     val recognized = recognizeWithPreloadedScreenshots(
@@ -121,7 +120,9 @@ class CaptureForegroundService : Service() {
         val producer = launch {
             try {
                 for (delayMs in CAPTURE_DELAYS_MS) {
-                    delay(delayMs)
+                    if (delayMs > 0L) {
+                        delay(delayMs)
+                    }
                     screenshots.send(session.captureJpeg())
                 }
             } catch (exception: CancellationException) {
@@ -212,7 +213,7 @@ class CaptureForegroundService : Service() {
         const val EXTRA_DATA = "data"
         private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
         private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
-        private val CAPTURE_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
+        private val CAPTURE_DELAYS_MS = listOf(0L, 500L, 1_000L)
         private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()
 
         fun start(context: Context, resultCode: Int, data: Intent) {
