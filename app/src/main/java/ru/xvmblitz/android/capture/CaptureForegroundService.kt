@@ -27,10 +27,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
-import ru.xvmblitz.android.data.api.BattleStatisticsDto
 import ru.xvmblitz.android.overlay.OverlayService
 import ru.xvmblitz.android.util.AppAlertNotifier
-import ru.xvmblitz.android.util.CaptureAccessGuard
 import ru.xvmblitz.android.util.HttpErrorMessages
 
 class CaptureForegroundService : Service() {
@@ -69,45 +67,62 @@ class CaptureForegroundService : Service() {
                 delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
-                    val recognized = recognizeWithRetries(
-                        session = session,
-                        upload = { bytes ->
-                            val body = bytes.toRequestBody(JPEG_MEDIA_TYPE)
+                    var lastErrorMessage: String? = null
+                    for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
+                        delay(attemptDelayMs)
+                        try {
+                            val jpegBytes = session.captureGrayscaleJpeg()
+                            val body = jpegBytes.toRequestBody(JPEG_MEDIA_TYPE)
                             val part = MultipartBody.Part.createFormData(
                                 "file",
                                 "battleScreenshot.jpg",
                                 body,
                             )
-                            withTimeout(STATISTICS_REQUEST_TIMEOUT) {
+                            val battle = withTimeout(STATISTICS_REQUEST_TIMEOUT) {
                                 container.statisticsApi.getBattleStatistics(apiKey, part)
                             }
-                        },
-                    )
-
-                    when (recognized) {
-                        is RecognizeResult.Success -> {
-                            container.battleStatisticsStore.publish(recognized.battle)
+                            container.battleStatisticsStore.publish(battle)
                             container.settingsRepository.setOverlayVisible(true)
                             OverlayService.start(applicationContext)
                             OverlayService.restoreAfterCapture(applicationContext)
                             CaptureEvents.emit(CaptureEvents.Result.Success)
+                            return@launch
+                        } catch (exception: TimeoutCancellationException) {
+                            notifyStatisticsFailed()
+                            return@launch
+                        } catch (exception: CancellationException) {
+                            throw exception
+                        } catch (exception: Exception) {
+                            val httpException = exception as? HttpException
+                            if (httpException?.code() == 429) {
+                                notifyAccessDenied(
+                                    HttpErrorMessages.fromHttpException(httpException)
+                                        ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
+                                )
+                                return@launch
+                            }
+                            lastErrorMessage = httpException
+                                ?.let(HttpErrorMessages::fromHttpException)
+                                ?: exception.message
+                                ?: STATISTICS_FAILED_MESSAGE
                         }
-                        is RecognizeResult.AccessDenied -> notifyAccessDenied(recognized.message)
-                        is RecognizeResult.Failed -> notifyAccessDenied(recognized.message)
                     }
+                    notifyAccessDenied(lastErrorMessage ?: STATISTICS_FAILED_MESSAGE)
                 }
             } catch (exception: TimeoutCancellationException) {
-                notifyAccessDenied(STATISTICS_FAILED_MESSAGE)
+                notifyStatisticsFailed()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
-                val denied = CaptureAccessGuard.classifyError(exception)
-                if (denied != null) {
-                    notifyAccessDenied(denied.message)
+                val httpException = exception as? HttpException
+                if (httpException?.code() == 429) {
+                    notifyAccessDenied(
+                        HttpErrorMessages.fromHttpException(httpException)
+                            ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
+                    )
                 } else {
                     notifyAccessDenied(
-                        (exception as? HttpException)
-                            ?.let(HttpErrorMessages::fromHttpException)
+                        httpException?.let(HttpErrorMessages::fromHttpException)
                             ?: exception.message
                             ?: STATISTICS_FAILED_MESSAGE,
                     )
@@ -120,49 +135,8 @@ class CaptureForegroundService : Service() {
         return START_NOT_STICKY
     }
 
-    private suspend fun recognizeWithRetries(
-        session: ScreenCaptureSession,
-        upload: suspend (ByteArray) -> BattleStatisticsDto,
-    ): RecognizeResult {
-        var lastErrorMessage: String? = null
-
-        for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
-            delay(attemptDelayMs)
-
-            val screenshot = try {
-                session.captureJpeg()
-            } catch (_: TimeoutCancellationException) {
-                lastErrorMessage = STATISTICS_FAILED_MESSAGE
-                continue
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (_: Exception) {
-                lastErrorMessage = STATISTICS_FAILED_MESSAGE
-                continue
-            }
-
-            try {
-                return RecognizeResult.Success(upload(screenshot))
-            } catch (_: TimeoutCancellationException) {
-                lastErrorMessage = STATISTICS_FAILED_MESSAGE
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                val httpException = exception as? HttpException
-                if (httpException?.code() == 429) {
-                    return RecognizeResult.AccessDenied(
-                        HttpErrorMessages.fromHttpException(httpException)
-                            ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
-                    )
-                }
-                lastErrorMessage = httpException
-                    ?.let(HttpErrorMessages::fromHttpException)
-                    ?: exception.message
-                    ?: STATISTICS_FAILED_MESSAGE
-            }
-        }
-
-        return RecognizeResult.Failed(lastErrorMessage ?: STATISTICS_FAILED_MESSAGE)
+    private suspend fun notifyStatisticsFailed() {
+        notifyAccessDenied(STATISTICS_FAILED_MESSAGE)
     }
 
     private suspend fun notifyAccessDenied(message: String) {
@@ -198,12 +172,6 @@ class CaptureForegroundService : Service() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
-    }
-
-    private sealed interface RecognizeResult {
-        data class Success(val battle: BattleStatisticsDto) : RecognizeResult
-        data class AccessDenied(val message: String) : RecognizeResult
-        data class Failed(val message: String) : RecognizeResult
     }
 
     companion object {

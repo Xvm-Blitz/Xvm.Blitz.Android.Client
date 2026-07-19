@@ -10,7 +10,6 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
-import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
@@ -19,15 +18,12 @@ import android.os.HandlerThread
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 
 class ScreenCaptureSession(
     context: Context,
@@ -40,7 +36,6 @@ class ScreenCaptureSession(
     private val width: Int
     private val height: Int
     private val density: Int
-    private val captureMutex = Mutex()
     private var closed = false
 
     init {
@@ -62,53 +57,30 @@ class ScreenCaptureSession(
         )
     }
 
-    suspend fun captureJpeg(): ByteArray {
+    suspend fun captureGrayscaleJpeg(): ByteArray {
         check(!closed) { "ScreenCaptureSession is closed" }
-        return captureMutex.withLock {
-            delay(FRAME_SETTLE_DELAY_MS)
-            val bitmap = withTimeout(FRAME_WAIT_TIMEOUT) {
-                awaitUsableBitmap()
+        delay(FRAME_SETTLE_DELAY_MS)
+        val colorBitmap = awaitColorBitmap()
+        return try {
+            withContext(Dispatchers.Default) {
+                colorBitmap.toGrayscaleJpegBytes()
             }
-            try {
-                bitmap.toGrayscaleJpegBytes()
-            } finally {
-                bitmap.recycle()
-            }
+        } finally {
+            colorBitmap.recycle()
         }
     }
 
-    private suspend fun awaitUsableBitmap(): Bitmap {
-        val imageReader = ImageReader.newInstance(
-            width,
-            height,
-            PixelFormat.RGBA_8888,
-            IMAGE_READER_MAX_IMAGES,
-        )
+    private suspend fun awaitColorBitmap(): Bitmap {
+        val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
         var virtualDisplay: VirtualDisplay? = null
-        try {
-            return suspendCancellableCoroutine { continuation ->
-                val completed = AtomicBoolean(false)
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                var resumed = false
                 var acceptedFrames = 0
-
-                fun complete(result: Result<Bitmap>) {
-                    if (!completed.compareAndSet(false, true)) {
-                        result.getOrNull()?.recycle()
-                        return
-                    }
-                    imageReader.setOnImageAvailableListener(null, null)
-                    result.fold(
-                        onSuccess = { bitmap ->
-                            continuation.resume(bitmap) { _, value, _ -> value.recycle() }
-                        },
-                        onFailure = { error ->
-                            continuation.resumeWithException(error)
-                        },
-                    )
-                }
 
                 imageReader.setOnImageAvailableListener(
                     { reader ->
-                        if (completed.get()) {
+                        if (resumed) {
                             return@setOnImageAvailableListener
                         }
                         val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
@@ -117,14 +89,33 @@ class ScreenCaptureSession(
                             if (acceptedFrames < FRAMES_TO_SKIP_BEFORE_CAPTURE) {
                                 return@setOnImageAvailableListener
                             }
-                            val bitmap = image.toBitmap(width, height)
-                            if (bitmap.isMostlyBlack()) {
-                                bitmap.recycle()
-                                return@setOnImageAvailableListener
+
+                            val plane = image.planes[0]
+                            val buffer = plane.buffer
+                            val pixelStride = plane.pixelStride
+                            val rowStride = plane.rowStride
+                            val rowPadding = rowStride - pixelStride * width
+                            buffer.rewind()
+                            val bitmap = Bitmap.createBitmap(
+                                width + rowPadding / pixelStride,
+                                height,
+                                Bitmap.Config.ARGB_8888,
+                            )
+                            bitmap.copyPixelsFromBuffer(buffer)
+                            val cropped = if (rowPadding == 0) {
+                                bitmap
+                            } else {
+                                Bitmap.createBitmap(bitmap, 0, 0, width, height).also { bitmap.recycle() }
                             }
-                            complete(Result.success(bitmap))
+                            resumed = true
+                            imageReader.setOnImageAvailableListener(null, null)
+                            continuation.resume(cropped)
                         } catch (exception: Exception) {
-                            complete(Result.failure(exception))
+                            if (!resumed) {
+                                resumed = true
+                                imageReader.setOnImageAvailableListener(null, null)
+                                continuation.resumeWithException(exception)
+                            }
                         } finally {
                             image.close()
                         }
@@ -144,13 +135,17 @@ class ScreenCaptureSession(
                         handler,
                     )
                 } catch (exception: Exception) {
-                    complete(Result.failure(exception))
+                    if (!resumed) {
+                        resumed = true
+                        continuation.resumeWithException(exception)
+                    }
                     return@suspendCancellableCoroutine
                 }
 
                 continuation.invokeOnCancellation {
-                    completed.set(true)
                     imageReader.setOnImageAvailableListener(null, null)
+                    virtualDisplay?.release()
+                    imageReader.close()
                 }
             }
         } finally {
@@ -169,82 +164,34 @@ class ScreenCaptureSession(
     }
 
     companion object {
-        private const val IMAGE_READER_MAX_IMAGES = 3
         private const val FRAME_SETTLE_DELAY_MS = 150L
         private const val FRAMES_TO_SKIP_BEFORE_CAPTURE = 2
-        private val FRAME_WAIT_TIMEOUT = 5.seconds
     }
 }
 
-private fun Image.toBitmap(width: Int, height: Int): Bitmap {
-    val plane = planes[0]
-    val buffer = plane.buffer
-    val pixelStride = plane.pixelStride
-    val rowStride = plane.rowStride
-    val rowPadding = rowStride - pixelStride * width
-    buffer.rewind()
-
-    val paddedWidth = width + rowPadding / pixelStride
-    val source = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
-    source.copyPixelsFromBuffer(buffer)
-    return if (paddedWidth == width) {
-        source
-    } else {
-        Bitmap.createBitmap(source, 0, 0, width, height).also { source.recycle() }
-    }
-}
-
-private fun Bitmap.isMostlyBlack(): Boolean {
-    val stepX = (width / 32).coerceAtLeast(1)
-    val stepY = (height / 32).coerceAtLeast(1)
-    var maxLuminance = 0.0
-    var y = 0
-    while (y < height) {
-        var x = 0
-        while (x < width) {
-            val color = getPixel(x, y)
-            val luminance =
-                (0.299 * ((color shr 16) and 0xFF)) +
-                    (0.587 * ((color shr 8) and 0xFF)) +
-                    (0.114 * (color and 0xFF))
-            if (luminance > maxLuminance) {
-                maxLuminance = luminance
-            }
-            x += stepX
-        }
-        y += stepY
-    }
-    return maxLuminance < 16.0
+private val grayscalePaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+    colorFilter = ColorMatrixColorFilter(
+        ColorMatrix(
+            floatArrayOf(
+                0.299f, 0.587f, 0.114f, 0f, 0f,
+                0.299f, 0.587f, 0.114f, 0f, 0f,
+                0.299f, 0.587f, 0.114f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
 }
 
 private fun Bitmap.toGrayscaleJpegBytes(): ByteArray {
-    val grayscaleBitmap = toGrayscale()
+    val grayscale = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    Canvas(grayscale).drawBitmap(this, 0f, 0f, grayscalePaint)
     return try {
-        val stream = ByteArrayOutputStream(width * height / 2)
-        if (!grayscaleBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
+        val stream = ByteArrayOutputStream(width * height)
+        if (!grayscale.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
             error("JPEG encode failed")
         }
         stream.toByteArray()
     } finally {
-        grayscaleBitmap.recycle()
+        grayscale.recycle()
     }
-}
-
-private fun Bitmap.toGrayscale(): Bitmap {
-    val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(result)
-    val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-        colorFilter = ColorMatrixColorFilter(
-            ColorMatrix(
-                floatArrayOf(
-                    0.299f, 0.587f, 0.114f, 0f, 0f,
-                    0.299f, 0.587f, 0.114f, 0f, 0f,
-                    0.299f, 0.587f, 0.114f, 0f, 0f,
-                    0f, 0f, 0f, 1f, 0f,
-                ),
-            ),
-        )
-    }
-    canvas.drawBitmap(this, 0f, 0f, paint)
-    return result
 }
