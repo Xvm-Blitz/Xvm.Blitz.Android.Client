@@ -12,11 +12,14 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -25,6 +28,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
+import ru.xvmblitz.android.data.api.BattleStatisticsDto
 import ru.xvmblitz.android.overlay.OverlayService
 import ru.xvmblitz.android.util.AppAlertNotifier
 import ru.xvmblitz.android.util.CaptureAccessGuard
@@ -65,37 +69,32 @@ class CaptureForegroundService : Service() {
                 delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
-                    for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
-                        delay(attemptDelayMs)
-                        try {
-                            val pngBytes = session.captureGrayscalePng()
-                            val body = pngBytes.toRequestBody("image/png".toMediaType())
+                    val recognized = recognizeWithPreloadedScreenshots(
+                        session = session,
+                        upload = { bytes ->
+                            val body = bytes.toRequestBody(JPEG_MEDIA_TYPE)
                             val part = MultipartBody.Part.createFormData(
                                 "file",
-                                "battleScreenshot.png",
+                                "battleScreenshot.jpg",
                                 body,
                             )
-                            val battle = withTimeout(STATISTICS_REQUEST_TIMEOUT) {
+                            withTimeout(STATISTICS_REQUEST_TIMEOUT) {
                                 container.statisticsApi.getBattleStatistics(apiKey, part)
                             }
-                            container.battleStatisticsStore.publish(battle)
+                        },
+                    )
+
+                    when (recognized) {
+                        is RecognizeResult.Success -> {
+                            container.battleStatisticsStore.publish(recognized.battle)
                             container.settingsRepository.setOverlayVisible(true)
                             OverlayService.start(applicationContext)
                             OverlayService.restoreAfterCapture(applicationContext)
                             CaptureEvents.emit(CaptureEvents.Result.Success)
-                            return@launch
-                        } catch (exception: TimeoutCancellationException) {
-                            notifyStatisticsFailed()
-                            return@launch
-                        } catch (exception: Exception) {
-                            val denied = CaptureAccessGuard.classifyError(exception)
-                            if (denied != null) {
-                                notifyAccessDenied(denied.message)
-                                return@launch
-                            }
                         }
+                        is RecognizeResult.AccessDenied -> notifyAccessDenied(recognized.message)
+                        RecognizeResult.Failed -> notifyStatisticsFailed()
                     }
-                    notifyStatisticsFailed()
                 }
             } catch (exception: TimeoutCancellationException) {
                 notifyStatisticsFailed()
@@ -112,6 +111,54 @@ class CaptureForegroundService : Service() {
         }
 
         return START_NOT_STICKY
+    }
+
+    private suspend fun recognizeWithPreloadedScreenshots(
+        session: ScreenCaptureSession,
+        upload: suspend (ByteArray) -> BattleStatisticsDto,
+    ): RecognizeResult = coroutineScope {
+        val screenshots = Channel<ByteArray>(Channel.UNLIMITED)
+        val producer = launch {
+            try {
+                for (delayMs in CAPTURE_DELAYS_MS) {
+                    delay(delayMs)
+                    screenshots.send(session.captureJpeg())
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+            } finally {
+                screenshots.close()
+            }
+        }
+
+        var accessDeniedMessage: String? = null
+        var battle: BattleStatisticsDto? = null
+        try {
+            for (screenshot in screenshots) {
+                try {
+                    battle = upload(screenshot)
+                    break
+                } catch (_: TimeoutCancellationException) {
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    val denied = CaptureAccessGuard.classifyError(exception)
+                    if (denied != null) {
+                        accessDeniedMessage = denied.message
+                        break
+                    }
+                }
+            }
+        } finally {
+            producer.cancel()
+        }
+
+        when {
+            battle != null -> RecognizeResult.Success(battle)
+            accessDeniedMessage != null -> RecognizeResult.AccessDenied(accessDeniedMessage)
+            else -> RecognizeResult.Failed
+        }
     }
 
     private suspend fun notifyStatisticsFailed() {
@@ -153,13 +200,20 @@ class CaptureForegroundService : Service() {
         super.onDestroy()
     }
 
+    private sealed interface RecognizeResult {
+        data class Success(val battle: BattleStatisticsDto) : RecognizeResult
+        data class AccessDenied(val message: String) : RecognizeResult
+        data object Failed : RecognizeResult
+    }
+
     companion object {
         private const val NOTIFICATION_ID = 1002
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "data"
         private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
         private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
-        private val CAPTURE_ATTEMPT_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
+        private val CAPTURE_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
+        private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, CaptureForegroundService::class.java).apply {

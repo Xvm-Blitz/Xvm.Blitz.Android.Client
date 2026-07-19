@@ -3,10 +3,14 @@ package ru.xvmblitz.android.capture
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
@@ -31,6 +35,9 @@ class ScreenCaptureSession(
     private val width: Int
     private val height: Int
     private val density: Int
+    private var imageReader: ImageReader? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var displayReady = false
     private var closed = false
 
     init {
@@ -52,81 +59,83 @@ class ScreenCaptureSession(
         )
     }
 
-    suspend fun captureGrayscalePng(): ByteArray {
+    suspend fun captureJpeg(): ByteArray {
         check(!closed) { "ScreenCaptureSession is closed" }
-        val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
-        var virtualDisplay: VirtualDisplay? = null
-        return try {
+        ensureVirtualDisplay()
+        if (!displayReady) {
             delay(FRAME_SETTLE_DELAY_MS)
-            suspendCancellableCoroutine { continuation ->
-                var resumed = false
-                var acceptedFrames = 0
+        }
+        val framesToSkip = if (displayReady) 0 else FRAMES_TO_SKIP_BEFORE_CAPTURE
+        return suspendCancellableCoroutine { continuation ->
+            var resumed = false
+            var acceptedFrames = 0
+            val reader = imageReader ?: run {
+                continuation.resumeWithException(IllegalStateException("ImageReader is null"))
+                return@suspendCancellableCoroutine
+            }
 
-                imageReader.setOnImageAvailableListener(
-                    { reader ->
-                        if (resumed) {
+            reader.setOnImageAvailableListener(
+                { availableReader ->
+                    if (resumed) {
+                        return@setOnImageAvailableListener
+                    }
+                    val image = availableReader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    try {
+                        acceptedFrames += 1
+                        if (acceptedFrames <= framesToSkip) {
                             return@setOnImageAvailableListener
                         }
-                        val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-                        try {
-                            acceptedFrames += 1
-                            if (acceptedFrames < FRAMES_TO_SKIP_BEFORE_CAPTURE) {
-                                return@setOnImageAvailableListener
-                            }
 
-                            val plane = image.planes[0]
-                            val buffer = plane.buffer
-                            val pixelStride = plane.pixelStride
-                            val rowStride = plane.rowStride
-                            val rowPadding = rowStride - pixelStride * width
-                            val bitmap = Bitmap.createBitmap(
-                                width + rowPadding / pixelStride,
-                                height,
-                                Bitmap.Config.ARGB_8888,
-                            )
-                            bitmap.copyPixelsFromBuffer(buffer)
-                            val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                            if (cropped !== bitmap) {
-                                bitmap.recycle()
-                            }
-                            val grayscale = toGrayscale(cropped)
-                            cropped.recycle()
-                            val pngBytes = grayscale.toPngBytes()
-                            grayscale.recycle()
+                        val jpegBytes = image.toGrayscaleJpegBytes(width, height, JPEG_QUALITY)
+                        displayReady = true
+                        resumed = true
+                        availableReader.setOnImageAvailableListener(null, null)
+                        continuation.resume(jpegBytes)
+                    } catch (exception: Exception) {
+                        if (!resumed) {
                             resumed = true
-                            continuation.resume(pngBytes)
-                        } catch (exception: Exception) {
-                            if (!resumed) {
-                                resumed = true
-                                continuation.resumeWithException(exception)
-                            }
-                        } finally {
-                            image.close()
+                            availableReader.setOnImageAvailableListener(null, null)
+                            continuation.resumeWithException(exception)
                         }
-                    },
-                    handler,
-                )
+                    } finally {
+                        image.close()
+                    }
+                },
+                handler,
+            )
 
-                virtualDisplay = mediaProjection.createVirtualDisplay(
-                    "xvm-blitz-capture",
-                    width,
-                    height,
-                    density,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    imageReader.surface,
-                    null,
-                    handler,
-                )
-
-                continuation.invokeOnCancellation {
-                    virtualDisplay?.release()
-                    imageReader.close()
-                }
+            continuation.invokeOnCancellation {
+                reader.setOnImageAvailableListener(null, null)
             }
-        } finally {
-            virtualDisplay?.release()
-            imageReader.close()
         }
+    }
+
+    private fun ensureVirtualDisplay() {
+        if (imageReader != null && virtualDisplay != null) {
+            return
+        }
+        releaseDisplay()
+        val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+        imageReader = reader
+        virtualDisplay = mediaProjection.createVirtualDisplay(
+            "xvm-blitz-capture",
+            width,
+            height,
+            density,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            reader.surface,
+            null,
+            handler,
+        )
+        displayReady = false
+    }
+
+    private fun releaseDisplay() {
+        virtualDisplay?.release()
+        virtualDisplay = null
+        imageReader?.close()
+        imageReader = null
+        displayReady = false
     }
 
     override fun close() {
@@ -134,37 +143,57 @@ class ScreenCaptureSession(
             return
         }
         closed = true
+        releaseDisplay()
         runCatching { mediaProjection.stop() }
         handlerThread.quitSafely()
     }
 
-    private fun toGrayscale(source: Bitmap): Bitmap {
-        val width = source.width
-        val height = source.height
-        val pixels = IntArray(width * height)
-        source.getPixels(pixels, 0, width, 0, 0, width, height)
-        for (index in pixels.indices) {
-            val color = pixels[index]
-            val gray = (
-                0.299 * Color.red(color) +
-                    0.587 * Color.green(color) +
-                    0.114 * Color.blue(color)
-                ).toInt().coerceIn(0, 255)
-            pixels[index] = Color.rgb(gray, gray, gray)
-        }
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        result.setPixels(pixels, 0, width, 0, 0, width, height)
-        return result
-    }
-
-    private fun Bitmap.toPngBytes(): ByteArray {
-        val stream = ByteArrayOutputStream()
-        compress(Bitmap.CompressFormat.PNG, 100, stream)
-        return stream.toByteArray()
-    }
-
     companion object {
-        private const val FRAME_SETTLE_DELAY_MS = 150L
-        private const val FRAMES_TO_SKIP_BEFORE_CAPTURE = 2
+        private const val FRAME_SETTLE_DELAY_MS = 50L
+        private const val FRAMES_TO_SKIP_BEFORE_CAPTURE = 1
+        private const val JPEG_QUALITY = 88
     }
+}
+
+private fun Image.toGrayscaleJpegBytes(width: Int, height: Int, quality: Int): ByteArray {
+    val plane = planes[0]
+    val buffer = plane.buffer
+    val pixelStride = plane.pixelStride
+    val rowStride = plane.rowStride
+    val rowPadding = rowStride - pixelStride * width
+    buffer.rewind()
+
+    val paddedWidth = width + rowPadding / pixelStride
+    val source = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
+    source.copyPixelsFromBuffer(buffer)
+    val colorBitmap = if (paddedWidth == width) {
+        source
+    } else {
+        Bitmap.createBitmap(source, 0, 0, width, height).also { source.recycle() }
+    }
+
+    val grayscaleBitmap = colorBitmap.toGrayscale()
+    if (grayscaleBitmap !== colorBitmap) {
+        colorBitmap.recycle()
+    }
+
+    return try {
+        val stream = ByteArrayOutputStream(width * height / 4)
+        if (!grayscaleBitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)) {
+            error("JPEG compress failed")
+        }
+        stream.toByteArray()
+    } finally {
+        grayscaleBitmap.recycle()
+    }
+}
+
+private fun Bitmap.toGrayscale(): Bitmap {
+    val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(result)
+    val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+    }
+    canvas.drawBitmap(this, 0f, 0f, paint)
+    return result
 }
