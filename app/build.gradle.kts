@@ -22,8 +22,8 @@ android {
         applicationId = "ru.xvmblitz.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.3.12"
+        versionCode = 24
+        versionName = "1.3.13"
     }
 
     signingConfigs {
