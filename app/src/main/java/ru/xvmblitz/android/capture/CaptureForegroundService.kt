@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlin.time.Duration.Companion.seconds
@@ -97,6 +98,8 @@ class CaptureForegroundService : Service() {
                 }
             } catch (exception: TimeoutCancellationException) {
                 notifyStatisticsFailed()
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: Exception) {
                 val denied = CaptureAccessGuard.classifyError(exception)
                 if (denied != null) {
@@ -117,17 +120,22 @@ class CaptureForegroundService : Service() {
         upload: suspend (ByteArray) -> BattleStatisticsDto,
     ): RecognizeResult = coroutineScope {
         val screenshots = Channel<ByteArray>(Channel.UNLIMITED)
+        val startedAtMs = SystemClock.elapsedRealtime()
         val producer = launch {
             try {
-                for (delayMs in CAPTURE_DELAYS_MS) {
-                    if (delayMs > 0L) {
-                        delay(delayMs)
+                for (targetDelayMs in CAPTURE_AT_MS) {
+                    val waitMs = targetDelayMs - (SystemClock.elapsedRealtime() - startedAtMs)
+                    if (waitMs > 0L) {
+                        delay(waitMs)
                     }
-                    screenshots.send(session.captureJpeg())
+                    try {
+                        screenshots.send(session.captureJpeg())
+                    } catch (_: TimeoutCancellationException) {
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (_: Exception) {
+                    }
                 }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (_: Exception) {
             } finally {
                 screenshots.close()
             }
@@ -213,7 +221,7 @@ class CaptureForegroundService : Service() {
         const val EXTRA_DATA = "data"
         private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
         private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
-        private val CAPTURE_DELAYS_MS = listOf(0L, 500L, 1_000L)
+        private val CAPTURE_AT_MS = listOf(0L, 500L, 1_000L)
         private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()
 
         fun start(context: Context, resultCode: Int, data: Intent) {

@@ -18,11 +18,15 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.DisplayMetrics
 import android.view.WindowManager
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 
 class ScreenCaptureSession(
     context: Context,
@@ -35,9 +39,7 @@ class ScreenCaptureSession(
     private val width: Int
     private val height: Int
     private val density: Int
-    private var imageReader: ImageReader? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var displayReady = false
+    private val captureMutex = Mutex()
     private var closed = false
 
     init {
@@ -61,81 +63,83 @@ class ScreenCaptureSession(
 
     suspend fun captureJpeg(): ByteArray {
         check(!closed) { "ScreenCaptureSession is closed" }
-        ensureVirtualDisplay()
-        if (!displayReady) {
-            delay(FRAME_SETTLE_DELAY_MS)
-        }
-        val framesToSkip = if (displayReady) 0 else FRAMES_TO_SKIP_BEFORE_CAPTURE
-        return suspendCancellableCoroutine { continuation ->
-            var resumed = false
-            var acceptedFrames = 0
-            val reader = imageReader ?: run {
-                continuation.resumeWithException(IllegalStateException("ImageReader is null"))
-                return@suspendCancellableCoroutine
-            }
-
-            reader.setOnImageAvailableListener(
-                { availableReader ->
-                    if (resumed) {
-                        return@setOnImageAvailableListener
-                    }
-                    val image = availableReader.acquireLatestImage() ?: return@setOnImageAvailableListener
-                    try {
-                        acceptedFrames += 1
-                        if (acceptedFrames <= framesToSkip) {
-                            return@setOnImageAvailableListener
-                        }
-
-                        val jpegBytes = image.toGrayscaleJpegBytes(width, height, JPEG_QUALITY)
-                        displayReady = true
-                        resumed = true
-                        availableReader.setOnImageAvailableListener(null, null)
-                        continuation.resume(jpegBytes)
-                    } catch (exception: Exception) {
-                        if (!resumed) {
-                            resumed = true
-                            availableReader.setOnImageAvailableListener(null, null)
-                            continuation.resumeWithException(exception)
-                        }
-                    } finally {
-                        image.close()
-                    }
-                },
-                handler,
-            )
-
-            continuation.invokeOnCancellation {
-                reader.setOnImageAvailableListener(null, null)
+        return captureMutex.withLock {
+            withTimeout(CAPTURE_TIMEOUT) {
+                captureJpegLocked()
             }
         }
     }
 
-    private fun ensureVirtualDisplay() {
-        if (imageReader != null && virtualDisplay != null) {
-            return
-        }
-        releaseDisplay()
-        val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        imageReader = reader
-        virtualDisplay = mediaProjection.createVirtualDisplay(
-            "xvm-blitz-capture",
+    private suspend fun captureJpegLocked(): ByteArray {
+        val imageReader = ImageReader.newInstance(
             width,
             height,
-            density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            reader.surface,
-            null,
-            handler,
+            PixelFormat.RGBA_8888,
+            IMAGE_READER_MAX_IMAGES,
         )
-        displayReady = false
-    }
+        var virtualDisplay: VirtualDisplay? = null
+        try {
+            return suspendCancellableCoroutine { continuation ->
+                val completed = AtomicBoolean(false)
 
-    private fun releaseDisplay() {
-        virtualDisplay?.release()
-        virtualDisplay = null
-        imageReader?.close()
-        imageReader = null
-        displayReady = false
+                fun complete(result: Result<ByteArray>) {
+                    if (!completed.compareAndSet(false, true)) {
+                        return
+                    }
+                    imageReader.setOnImageAvailableListener(null, null)
+                    result.fold(
+                        onSuccess = { bytes ->
+                            continuation.resume(bytes) { _, _, _ -> }
+                        },
+                        onFailure = { error ->
+                            continuation.resumeWithException(error)
+                        },
+                    )
+                }
+
+                imageReader.setOnImageAvailableListener(
+                    { reader ->
+                        if (completed.get()) {
+                            return@setOnImageAvailableListener
+                        }
+                        val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                        val encoded = try {
+                            Result.success(image.toGrayscaleJpegBytes(width, height))
+                        } catch (exception: Exception) {
+                            Result.failure(exception)
+                        } finally {
+                            image.close()
+                        }
+                        complete(encoded)
+                    },
+                    handler,
+                )
+
+                try {
+                    virtualDisplay = mediaProjection.createVirtualDisplay(
+                        "xvm-blitz-capture",
+                        width,
+                        height,
+                        density,
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                        imageReader.surface,
+                        null,
+                        handler,
+                    )
+                } catch (exception: Exception) {
+                    complete(Result.failure(exception))
+                    return@suspendCancellableCoroutine
+                }
+
+                continuation.invokeOnCancellation {
+                    completed.set(true)
+                    imageReader.setOnImageAvailableListener(null, null)
+                }
+            }
+        } finally {
+            virtualDisplay?.release()
+            runCatching { imageReader.close() }
+        }
     }
 
     override fun close() {
@@ -143,19 +147,17 @@ class ScreenCaptureSession(
             return
         }
         closed = true
-        releaseDisplay()
         runCatching { mediaProjection.stop() }
         handlerThread.quitSafely()
     }
 
     companion object {
-        private const val FRAME_SETTLE_DELAY_MS = 50L
-        private const val FRAMES_TO_SKIP_BEFORE_CAPTURE = 1
-        private const val JPEG_QUALITY = 88
+        private const val IMAGE_READER_MAX_IMAGES = 2
+        private val CAPTURE_TIMEOUT = 500.milliseconds
     }
 }
 
-private fun Image.toGrayscaleJpegBytes(width: Int, height: Int, quality: Int): ByteArray {
+private fun Image.toGrayscaleJpegBytes(width: Int, height: Int): ByteArray {
     val plane = planes[0]
     val buffer = plane.buffer
     val pixelStride = plane.pixelStride
@@ -178,9 +180,9 @@ private fun Image.toGrayscaleJpegBytes(width: Int, height: Int, quality: Int): B
     }
 
     return try {
-        val stream = ByteArrayOutputStream(width * height / 4)
-        if (!grayscaleBitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)) {
-            error("JPEG compress failed")
+        val stream = ByteArrayOutputStream(width * height / 2)
+        if (!grayscaleBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
+            error("JPEG encode failed")
         }
         stream.toByteArray()
     } finally {
