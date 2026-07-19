@@ -99,7 +99,7 @@ class CaptureForegroundService : Service() {
                     }
                 }
             } catch (exception: TimeoutCancellationException) {
-                notifyStatisticsFailed()
+                notifyAccessDenied(STATISTICS_FAILED_MESSAGE)
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
@@ -107,7 +107,12 @@ class CaptureForegroundService : Service() {
                 if (denied != null) {
                     notifyAccessDenied(denied.message)
                 } else {
-                    notifyStatisticsFailed()
+                    notifyAccessDenied(
+                        (exception as? HttpException)
+                            ?.let(HttpErrorMessages::fromHttpException)
+                            ?: exception.message
+                            ?: STATISTICS_FAILED_MESSAGE,
+                    )
                 }
             } finally {
                 stopSelf()
