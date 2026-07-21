@@ -16,6 +16,8 @@ import ru.xvmblitz.android.data.AppContainer
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
 import ru.xvmblitz.android.data.settings.AppSettings
 import ru.xvmblitz.android.domain.BattleUiState
+import ru.xvmblitz.android.update.UpdateUiState
+import ru.xvmblitz.android.update.createAppUpdateFacade
 
 data class MainUiState(
     val settings: AppSettings = AppSettings(),
@@ -25,6 +27,7 @@ data class MainUiState(
     val usageUpdatedAtEpochMs: Long? = null,
     val isUsageLoading: Boolean = false,
     val isAuthorized: Boolean = false,
+    val update: UpdateUiState = UpdateUiState(),
 )
 
 class MainViewModel(
@@ -34,6 +37,7 @@ class MainViewModel(
     private val usageError = MutableStateFlow<String?>(null)
     private val usageUpdatedAtEpochMs = MutableStateFlow<Long?>(null)
     private val usageLoading = MutableStateFlow(false)
+    private val updateFacade = createAppUpdateFacade(container)
 
     val uiState: StateFlow<MainUiState> = combine(
         combine(
@@ -49,13 +53,14 @@ class MainViewModel(
                 isAuthorized = !apiKey.isNullOrBlank(),
             )
         },
-        combine(usageError, usageLoading, usageUpdatedAtEpochMs) { error, loading, updatedAt ->
-            UsageExtras(error, loading, updatedAt)
+        combine(usageError, usageLoading, updateFacade.state, usageUpdatedAtEpochMs) { error, loading, update, updatedAt ->
+            UsageExtras(error, loading, update, updatedAt)
         },
     ) { baseState, extras ->
         baseState.copy(
             usageError = extras.error,
             isUsageLoading = extras.loading,
+            update = extras.update,
             usageUpdatedAtEpochMs = extras.updatedAtEpochMs,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
@@ -63,11 +68,13 @@ class MainViewModel(
     private data class UsageExtras(
         val error: String?,
         val loading: Boolean,
+        val update: UpdateUiState,
         val updatedAtEpochMs: Long?,
     )
 
     init {
         refreshUsage()
+        updateFacade.startPeriodicChecks(viewModelScope)
     }
 
     fun refreshUsage() {
@@ -140,6 +147,18 @@ class MainViewModel(
             } finally {
                 usageLoading.value = false
             }
+        }
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            updateFacade.checkForUpdates(showLoading = true)
+        }
+    }
+
+    fun downloadAndInstallUpdate() {
+        viewModelScope.launch {
+            updateFacade.downloadAndInstallUpdate()
         }
     }
 

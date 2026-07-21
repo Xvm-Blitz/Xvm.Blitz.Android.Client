@@ -38,6 +38,18 @@ android {
         }
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("standard") {
+            dimension = "distribution"
+            buildConfigField("boolean", "RAW_APK", "false")
+        }
+        create("raw") {
+            dimension = "distribution"
+            buildConfigField("boolean", "RAW_APK", "true")
+        }
+    }
+
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("release")

@@ -109,6 +109,8 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onCheckForUpdates = mainViewModel::checkForUpdates,
+                                onDownloadUpdate = mainViewModel::downloadAndInstallUpdate,
                                 onConfigModeChange = { enabled ->
                                     mainViewModel.setConfigMode(enabled)
                                     if (enabled) {

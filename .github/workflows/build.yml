@@ -30,6 +30,7 @@ jobs:
     outputs:
       version: ${{ steps.meta-version.outputs.version }}
       apk_name: ${{ steps.meta-version.outputs.apk_name }}
+      apk_name_original: ${{ steps.meta-version.outputs.apk_name_original }}
       publish: ${{ steps.meta.outputs.publish }}
 
     steps:
@@ -92,9 +93,11 @@ jobs:
           fi
 
           apk_name="XVMBlitz-${version}-android.apk"
+          apk_name_original="XVMBlitz-${version}-android-original.apk"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "apk_name=${apk_name}" >> "$GITHUB_OUTPUT"
-          echo "Using version ${version}, apk ${apk_name}"
+          echo "apk_name_original=${apk_name_original}" >> "$GITHUB_OUTPUT"
+          echo "Using version ${version}, apk ${apk_name}, original ${apk_name_original}"
 
       - name: Setup JDK
         uses: actions/setup-java@v5
@@ -135,34 +138,45 @@ jobs:
             echo "Production secrets not set — using committed debug keystore"
           fi
 
-      - name: Build production APK
-        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Build production APKs
+        run: ./gradlew :app:assembleStandardRelease :app:assembleRawRelease --stacktrace
 
       - name: Unit tests
-        run: ./gradlew :app:testReleaseUnitTest --stacktrace
+        run: ./gradlew :app:testStandardReleaseUnitTest --stacktrace
 
-      - name: Prepare production artifact
+      - name: Prepare production artifacts
         shell: bash
         run: |
           mkdir -p "${{ env.ARTIFACTS_DIR }}"
 
           apk_name="${{ steps.meta-version.outputs.apk_name }}"
-          source_apk="app/build/outputs/apk/release/app-release.apk"
+          apk_name_original="${{ steps.meta-version.outputs.apk_name_original }}"
+          source_apk="app/build/outputs/apk/standard/release/app-standard-release.apk"
+          source_apk_original="app/build/outputs/apk/raw/release/app-raw-release.apk"
           target_apk="${{ env.ARTIFACTS_DIR }}/${apk_name}"
+          target_apk_original="${{ env.ARTIFACTS_DIR }}/${apk_name_original}"
 
           if [[ ! -f "$source_apk" ]]; then
             echo "Built APK not found: $source_apk" >&2
             exit 1
           fi
+          if [[ ! -f "$source_apk_original" ]]; then
+            echo "Built original APK not found: $source_apk_original" >&2
+            exit 1
+          fi
 
           cp "$source_apk" "$target_apk"
+          cp "$source_apk_original" "$target_apk_original"
           echo "Artifact: $target_apk"
+          echo "Artifact: $target_apk_original"
 
-      - name: Upload production APK
+      - name: Upload production APKs
         uses: actions/upload-artifact@v7
         with:
           name: production-apk
-          path: ${{ env.ARTIFACTS_DIR }}/${{ steps.meta-version.outputs.apk_name }}
+          path: |
+            ${{ env.ARTIFACTS_DIR }}/${{ steps.meta-version.outputs.apk_name }}
+            ${{ env.ARTIFACTS_DIR }}/${{ steps.meta-version.outputs.apk_name_original }}
           if-no-files-found: error
 
       - name: Commit version bump
@@ -207,7 +221,9 @@ jobs:
         with:
           tag_name: v${{ needs.build-and-test.outputs.version }}
           name: XVM Blitz Android ${{ needs.build-and-test.outputs.version }}
-          files: ${{ env.ARTIFACTS_DIR }}/${{ needs.build-and-test.outputs.apk_name }}
+          files: |
+            ${{ env.ARTIFACTS_DIR }}/${{ needs.build-and-test.outputs.apk_name }}
+            ${{ env.ARTIFACTS_DIR }}/${{ needs.build-and-test.outputs.apk_name_original }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -230,7 +246,9 @@ jobs:
 
           version="${{ needs.build-and-test.outputs.version }}"
           apk_name="${{ needs.build-and-test.outputs.apk_name }}"
+          apk_name_original="${{ needs.build-and-test.outputs.apk_name_original }}"
           apk_path="${{ env.ARTIFACTS_DIR }}/${apk_name}"
+          apk_path_original="${{ env.ARTIFACTS_DIR }}/${apk_name_original}"
           tag="v${version}"
 
           if [[ -n "${PUBLIC_RELEASES_REPO}" ]]; then
@@ -239,21 +257,21 @@ jobs:
             fi
 
             if gh release view "${tag}" --repo "${PUBLIC_RELEASES_REPO}" >/dev/null 2>&1; then
-              gh release upload "${tag}" "${apk_path}" --repo "${PUBLIC_RELEASES_REPO}" --clobber
+              gh release upload "${tag}" "${apk_path}" "${apk_path_original}" --repo "${PUBLIC_RELEASES_REPO}" --clobber
             else
-              gh release create "${tag}" "${apk_path}" \
+              gh release create "${tag}" "${apk_path}" "${apk_path_original}" \
                 --repo "${PUBLIC_RELEASES_REPO}" \
                 --title "XVM Blitz Android ${version}" \
                 --notes "Android client ${version}"
             fi
 
-            download_url="https://github.com/${PUBLIC_RELEASES_REPO}/releases/download/${tag}/${apk_name}"
+            download_url="https://github.com/${PUBLIC_RELEASES_REPO}/releases/download/${tag}/${apk_name_original}"
           else
             if [[ -n "${RELEASE_DOWNLOAD_BASE_URL}" ]]; then
               base_url="${RELEASE_DOWNLOAD_BASE_URL%/}"
-              download_url="${base_url}/releases/download/${tag}/${apk_name}"
+              download_url="${base_url}/releases/download/${tag}/${apk_name_original}"
             else
-              download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${apk_name}"
+              download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${apk_name_original}"
             fi
           fi
 

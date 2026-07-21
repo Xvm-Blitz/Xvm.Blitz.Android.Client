@@ -52,6 +52,8 @@ import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
 fun MainScreen(
     state: MainUiState,
     onAuthClick: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: () -> Unit,
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
     onUpdateAlliesPosition: (Int, Int) -> Unit,
@@ -138,6 +140,12 @@ fun MainScreen(
                 modifier = Modifier.weight(1f),
             )
         }
+
+        UpdateSection(
+            state = state.update,
+            onCheckForUpdates = onCheckForUpdates,
+            onDownloadUpdate = onDownloadUpdate,
+        )
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
