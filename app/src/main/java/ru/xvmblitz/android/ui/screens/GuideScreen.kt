@@ -114,7 +114,6 @@ private enum class GuideIllustration {
     HideStats,
     ConfigMove,
     ConfigResize,
-    Updates,
 }
 
 private val GuideSteps = listOf(
@@ -170,11 +169,6 @@ private val GuideSteps = listOf(
         title = "Размер панелей",
         description = "В режиме настройки: правый край — ширина, нижний — высота и шрифт, угол — оба направления. Ширина следует за размером шрифта.",
         illustration = GuideIllustration.ConfigResize,
-    ),
-    GuideStep(
-        title = "Обновления",
-        description = "В карточке «Обновление» можно проверить новую версию и установить APK прямо из приложения.",
-        illustration = GuideIllustration.Updates,
     ),
 )
 
@@ -755,7 +749,6 @@ private fun GuideIllustrationBox(
             GuideIllustration.HideStats -> HideStatsIllustration()
             GuideIllustration.ConfigMove -> ConfigMoveIllustration()
             GuideIllustration.ConfigResize -> ConfigResizeIllustration()
-            GuideIllustration.Updates -> UpdatesIllustration()
         }
     }
 }
@@ -1196,38 +1189,5 @@ private fun ConfigResizeIllustration() {
                 cap = StrokeCap.Round,
             )
         }
-    }
-}
-
-@Composable
-private fun UpdatesIllustration() {
-    val progress by rememberInfiniteTransition(label = "updates").animateFloat(
-        initialValue = 0.15f,
-        targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Restart),
-        label = "updates-progress",
-    )
-    Column(
-        modifier = Modifier.padding(horizontal = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Доступна версия 1.2.0", color = MaterialTheme.colorScheme.onSurface)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .clip(RoundedCornerShape(5.dp))
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .height(10.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(MaterialTheme.colorScheme.primary),
-            )
-        }
-        Text("Загрузка обновления…", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
     }
 }

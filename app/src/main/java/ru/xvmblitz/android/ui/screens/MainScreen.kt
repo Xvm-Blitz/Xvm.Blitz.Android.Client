@@ -56,6 +56,7 @@ fun MainScreen(
     onOverlayVisibleChange: (Boolean) -> Unit,
     onUpdateAlliesPosition: (Int, Int) -> Unit,
     onUpdateEnemiesPosition: (Int, Int) -> Unit,
+    onResetOverlayPositions: () -> Unit,
     onOpenGuide: () -> Unit,
     onOpenAbout: () -> Unit,
     onCloseApp: () -> Unit,
@@ -193,6 +194,12 @@ fun MainScreen(
                         onUpdateEnemiesPosition(x, y)
                         true
                     },
+                )
+
+                AdaptiveOutlinedButton(
+                    text = "Сбросить координаты",
+                    onClick = onResetOverlayPositions,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }

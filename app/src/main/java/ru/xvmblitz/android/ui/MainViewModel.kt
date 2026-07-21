@@ -173,6 +173,12 @@ class MainViewModel(
         }
     }
 
+    fun resetOverlayPositions() {
+        viewModelScope.launch {
+            container.settingsRepository.resetOverlayPositions()
+        }
+    }
+
     fun clearBattle() {
         container.battleStatisticsStore.clear()
     }

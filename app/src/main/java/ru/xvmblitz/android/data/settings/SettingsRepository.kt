@@ -91,6 +91,18 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun resetOverlayPositions() {
+        val defaults = AppSettings()
+        dataStore.edit { preferences ->
+            preferences[Keys.ALLIES_X] = defaults.alliesX
+            preferences[Keys.ALLIES_Y] = defaults.alliesY
+            preferences[Keys.ENEMIES_X] = defaults.enemiesX
+            preferences[Keys.ENEMIES_Y] = defaults.enemiesY
+            preferences[Keys.CAPTURE_BUTTON_X] = defaults.captureButtonX
+            preferences[Keys.CAPTURE_BUTTON_Y] = defaults.captureButtonY
+        }
+    }
+
     suspend fun setConfigMode(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.CONFIG_MODE] = enabled

@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
                                 onOverlayVisibleChange = mainViewModel::setOverlayVisible,
                                 onUpdateAlliesPosition = mainViewModel::updateAlliesPosition,
                                 onUpdateEnemiesPosition = mainViewModel::updateEnemiesPosition,
+                                onResetOverlayPositions = mainViewModel::resetOverlayPositions,
                                 onOpenGuide = {
                                     navController.navigate(Routes.Guide) {
                                         launchSingleTop = true
