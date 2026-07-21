@@ -9,7 +9,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
         <intent>
@@ -68,14 +67,6 @@
             android:name=".capture.CaptureForegroundService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
-
-        <receiver
-            android:name=".update.UpdateInstallReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="ru.xvmblitz.android.update.INSTALL_STATUS" />
-            </intent-filter>
-        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

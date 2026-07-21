@@ -68,7 +68,13 @@ class CaptureForegroundService : Service() {
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
                     var lastErrorMessage: String? = null
-                    for (attemptDelayMs in CAPTURE_ATTEMPT_DELAYS_MS) {
+                    val firstDelayMs = container.settingsRepository.current().captureFirstDelayMs.toLong()
+                    val attemptDelaysMs = listOf(
+                        firstDelayMs,
+                        RETRY_CAPTURE_DELAY_MS,
+                        FINAL_CAPTURE_DELAY_MS,
+                    )
+                    for (attemptDelayMs in attemptDelaysMs) {
                         delay(attemptDelayMs)
                         try {
                             val jpegBytes = session.captureGrayscaleJpeg()
@@ -180,7 +186,8 @@ class CaptureForegroundService : Service() {
         const val EXTRA_DATA = "data"
         private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
         private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
-        private val CAPTURE_ATTEMPT_DELAYS_MS = listOf(1_000L, 1_500L, 2_000L)
+        private const val RETRY_CAPTURE_DELAY_MS = 1_500L
+        private const val FINAL_CAPTURE_DELAY_MS = 2_000L
         private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()
 
         fun start(context: Context, resultCode: Int, data: Intent) {

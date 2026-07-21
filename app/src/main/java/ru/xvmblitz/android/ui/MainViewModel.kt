@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,26 +13,9 @@ import kotlinx.coroutines.launch
 import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.AppContainer
-import ru.xvmblitz.android.data.api.ClientPlatform
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
 import ru.xvmblitz.android.data.settings.AppSettings
 import ru.xvmblitz.android.domain.BattleUiState
-import ru.xvmblitz.android.update.AppUpdateInstaller
-import ru.xvmblitz.android.util.SemVerComparer
-import kotlin.time.Duration.Companion.minutes
-
-data class UpdateUiState(
-    val currentVersion: String = BuildConfig.VERSION_NAME,
-    val latestVersion: String? = null,
-    val downloadUrl: String? = null,
-    val isUpdateAvailable: Boolean = false,
-    val isUpToDate: Boolean = false,
-    val isChecking: Boolean = false,
-    val isDownloading: Boolean = false,
-    val isInstalling: Boolean = false,
-    val downloadProgress: Float = 0f,
-    val error: String? = null,
-)
 
 data class MainUiState(
     val settings: AppSettings = AppSettings(),
@@ -43,7 +25,6 @@ data class MainUiState(
     val usageUpdatedAtEpochMs: Long? = null,
     val isUsageLoading: Boolean = false,
     val isAuthorized: Boolean = false,
-    val update: UpdateUiState = UpdateUiState(),
 )
 
 class MainViewModel(
@@ -53,8 +34,6 @@ class MainViewModel(
     private val usageError = MutableStateFlow<String?>(null)
     private val usageUpdatedAtEpochMs = MutableStateFlow<Long?>(null)
     private val usageLoading = MutableStateFlow(false)
-    private val updateState = MutableStateFlow(UpdateUiState())
-    private val updateInstaller = AppUpdateInstaller(container.appContext, container.httpClient)
 
     val uiState: StateFlow<MainUiState> = combine(
         combine(
@@ -70,14 +49,13 @@ class MainViewModel(
                 isAuthorized = !apiKey.isNullOrBlank(),
             )
         },
-        combine(usageError, usageLoading, updateState, usageUpdatedAtEpochMs) { error, loading, update, updatedAt ->
-            UsageExtras(error, loading, update, updatedAt)
+        combine(usageError, usageLoading, usageUpdatedAtEpochMs) { error, loading, updatedAt ->
+            UsageExtras(error, loading, updatedAt)
         },
     ) { baseState, extras ->
         baseState.copy(
             usageError = extras.error,
             isUsageLoading = extras.loading,
-            update = extras.update,
             usageUpdatedAtEpochMs = extras.updatedAtEpochMs,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
@@ -85,18 +63,11 @@ class MainViewModel(
     private data class UsageExtras(
         val error: String?,
         val loading: Boolean,
-        val update: UpdateUiState,
         val updatedAtEpochMs: Long?,
     )
 
     init {
         refreshUsage()
-        viewModelScope.launch {
-            while (true) {
-                checkForUpdates(showLoading = false)
-                delay(UPDATE_CHECK_INTERVAL)
-            }
-        }
     }
 
     fun refreshUsage() {
@@ -172,90 +143,6 @@ class MainViewModel(
         }
     }
 
-    fun checkForUpdates() {
-        viewModelScope.launch {
-            checkForUpdates(showLoading = true)
-        }
-    }
-
-    fun downloadAndInstallUpdate() {
-        viewModelScope.launch {
-            val downloadUrl = updateState.value.downloadUrl
-            if (downloadUrl.isNullOrBlank()) {
-                updateState.value = updateState.value.copy(error = "Ссылка на обновление отсутствует")
-                return@launch
-            }
-            if (updateState.value.isDownloading || updateState.value.isInstalling) {
-                return@launch
-            }
-            updateState.value = updateState.value.copy(
-                isDownloading = true,
-                isInstalling = false,
-                downloadProgress = 0f,
-                error = null,
-            )
-            try {
-                updateInstaller.downloadAndInstall(downloadUrl) { progress ->
-                    updateState.value = updateState.value.copy(downloadProgress = progress)
-                }
-                updateState.value = updateState.value.copy(
-                    isDownloading = false,
-                    isInstalling = true,
-                    downloadProgress = 1f,
-                    error = null,
-                )
-            } catch (exception: Exception) {
-                updateState.value = updateState.value.copy(
-                    isDownloading = false,
-                    isInstalling = false,
-                    error = exception.message ?: "Не удалось обновить приложение",
-                )
-            }
-        }
-    }
-
-    private suspend fun checkForUpdates(showLoading: Boolean) {
-        val currentVersion = BuildConfig.VERSION_NAME
-        if (showLoading) {
-            updateState.value = updateState.value.copy(isChecking = true, error = null)
-        }
-        try {
-            val updateInfo = container.updatesApi.getLatestVersion(
-                currentVersion = currentVersion,
-                platform = ClientPlatform.Android,
-            )
-            val latestVersion = updateInfo.version.trim()
-            if (latestVersion.isEmpty()) {
-                updateState.value = updateState.value.copy(
-                    currentVersion = currentVersion,
-                    isChecking = false,
-                    error = if (showLoading) "Сервер не вернул версию" else updateState.value.error,
-                )
-                return
-            }
-            val hasUpdate = SemVerComparer.isLessThan(currentVersion, latestVersion)
-            updateState.value = updateState.value.copy(
-                currentVersion = currentVersion,
-                latestVersion = latestVersion,
-                downloadUrl = updateInfo.downloadUrl,
-                isUpdateAvailable = hasUpdate,
-                isUpToDate = !hasUpdate,
-                isChecking = false,
-                error = null,
-            )
-        } catch (exception: Exception) {
-            updateState.value = updateState.value.copy(
-                currentVersion = currentVersion,
-                isChecking = false,
-                error = if (showLoading) {
-                    exception.message ?: "Не удалось проверить обновление"
-                } else {
-                    updateState.value.error
-                },
-            )
-        }
-    }
-
     fun setConfigMode(enabled: Boolean) {
         viewModelScope.launch {
             container.settingsRepository.setConfigMode(enabled)
@@ -271,6 +158,12 @@ class MainViewModel(
     fun setOverlayVisible(visible: Boolean) {
         viewModelScope.launch {
             container.settingsRepository.setOverlayVisible(visible)
+        }
+    }
+
+    fun setCaptureFirstDelayMs(delayMs: Int) {
+        viewModelScope.launch {
+            container.settingsRepository.setCaptureFirstDelayMs(delayMs)
         }
     }
 
@@ -299,8 +192,6 @@ class MainViewModel(
     }
 
     companion object {
-        private val UPDATE_CHECK_INTERVAL = 10.minutes
-
         fun factory(container: AppContainer): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

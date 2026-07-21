@@ -25,6 +25,7 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.MutableStateFlow
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.overlay.OverlayService
+import ru.xvmblitz.android.ui.screens.AboutScreen
 import ru.xvmblitz.android.ui.screens.AuthScreen
 import ru.xvmblitz.android.ui.screens.GuideScreen
 import ru.xvmblitz.android.ui.screens.MainScreen
@@ -108,8 +109,6 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                     }
                                 },
-                                onCheckForUpdates = mainViewModel::checkForUpdates,
-                                onDownloadUpdate = mainViewModel::downloadAndInstallUpdate,
                                 onConfigModeChange = { enabled ->
                                     mainViewModel.setConfigMode(enabled)
                                     if (enabled) {
@@ -118,6 +117,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onOverlayVisibleChange = mainViewModel::setOverlayVisible,
+                                onCaptureFirstDelayChange = mainViewModel::setCaptureFirstDelayMs,
                                 onUpdateAlliesPosition = mainViewModel::updateAlliesPosition,
                                 onUpdateEnemiesPosition = mainViewModel::updateEnemiesPosition,
                                 onOpenGuide = {
@@ -125,10 +125,22 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onOpenAbout = {
+                                    navController.navigate(Routes.About) {
+                                        launchSingleTop = true
+                                    }
+                                },
                                 onCloseApp = {
                                     OverlayService.stop(this@MainActivity)
                                     finishAndRemoveTask()
                                     Process.killProcess(Process.myPid())
+                                },
+                            )
+                        }
+                        composable(Routes.About) {
+                            AboutScreen(
+                                onBack = {
+                                    navController.popBackStack()
                                 },
                             )
                         }
@@ -182,6 +194,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private object Routes {
+    const val About = "about"
     const val Auth = "auth"
     const val Main = "main"
     const val Guide = "guide"

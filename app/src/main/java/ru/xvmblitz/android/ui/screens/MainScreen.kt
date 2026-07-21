@@ -17,9 +17,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import ru.xvmblitz.android.data.settings.AppSettings
+import ru.xvmblitz.android.data.settings.coerceCaptureFirstDelayMs
 import ru.xvmblitz.android.ui.MainUiState
 import ru.xvmblitz.android.ui.components.AdaptiveButton
 import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
@@ -53,13 +55,13 @@ import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
 fun MainScreen(
     state: MainUiState,
     onAuthClick: () -> Unit,
-    onCheckForUpdates: () -> Unit,
-    onDownloadUpdate: () -> Unit,
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
+    onCaptureFirstDelayChange: (Int) -> Unit,
     onUpdateAlliesPosition: (Int, Int) -> Unit,
     onUpdateEnemiesPosition: (Int, Int) -> Unit,
     onOpenGuide: () -> Unit,
+    onOpenAbout: () -> Unit,
     onCloseApp: () -> Unit,
 ) {
     var alliesXText by remember { mutableStateOf(state.settings.alliesX.toString()) }
@@ -143,70 +145,6 @@ fun MainScreen(
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Обновление", style = MaterialTheme.typography.titleMedium)
-                Text("Текущая версия: ${state.update.currentVersion}")
-                if (state.update.isChecking) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-                if (state.update.isUpdateAvailable) {
-                    Text(
-                        text = "Доступна новая версия",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                    Text("Последняя версия: ${state.update.latestVersion}")
-                } else if (state.update.isUpToDate) {
-                    Text("Установлена актуальная версия")
-                }
-                if (state.update.isDownloading) {
-                    Text("Скачивание: ${(state.update.downloadProgress * 100).toInt()}%")
-                    LinearProgressIndicator(
-                        progress = { state.update.downloadProgress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else if (state.update.isInstalling) {
-                    Text("Установка обновления…")
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-                if (state.update.error != null) {
-                    Text(
-                        text = state.update.error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AdaptiveOutlinedButton(
-                        text = "Проверить обновление",
-                        onClick = onCheckForUpdates,
-                        enabled = !state.update.isChecking &&
-                            !state.update.isDownloading &&
-                            !state.update.isInstalling,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (state.update.isUpdateAvailable) {
-                        AdaptiveButton(
-                            text = when {
-                                state.update.isDownloading -> "Скачивание…"
-                                state.update.isInstalling -> "Установка…"
-                                else -> "Обновить"
-                            },
-                            onClick = onDownloadUpdate,
-                            enabled = !state.update.isDownloading && !state.update.isInstalling,
-                        )
-                    }
-                }
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text("Оверлей", style = MaterialTheme.typography.titleMedium)
@@ -232,6 +170,11 @@ fun MainScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+
+                CaptureDelaySliderRow(
+                    delayMs = state.settings.captureFirstDelayMs,
+                    onDelayChange = onCaptureFirstDelayChange,
+                )
 
                 Text("Координаты союзников", style = MaterialTheme.typography.titleSmall)
                 CoordinateRow(
@@ -262,6 +205,12 @@ fun MainScreen(
                 )
             }
         }
+
+        AdaptiveOutlinedButton(
+            text = "О приложении",
+            onClick = onOpenAbout,
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         AdaptiveButton(
             text = "Закрыть приложение",
@@ -345,6 +294,49 @@ private fun CoordinateRow(
 }
 
 private val SettingRowMinHeight = 48.dp
+
+@Composable
+private fun CaptureDelaySliderRow(
+    delayMs: Int,
+    onDelayChange: (Int) -> Unit,
+) {
+    var sliderValue by remember(delayMs) {
+        mutableFloatStateOf(delayMs.toFloat())
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Задержка до скриншота", modifier = Modifier.weight(1f))
+            Text(
+                text = "${coerceCaptureFirstDelayMs(sliderValue.roundToInt())} мс",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = sliderValue,
+            onValueChange = { value ->
+                sliderValue = coerceCaptureFirstDelayMs(value.roundToInt()).toFloat()
+            },
+            onValueChangeFinished = {
+                onDelayChange(sliderValue.roundToInt())
+            },
+            valueRange = AppSettings.MIN_CAPTURE_FIRST_DELAY_MS.toFloat()..
+                AppSettings.MAX_CAPTURE_FIRST_DELAY_MS.toFloat(),
+            steps = (AppSettings.MAX_CAPTURE_FIRST_DELAY_MS - AppSettings.MIN_CAPTURE_FIRST_DELAY_MS) /
+                AppSettings.CAPTURE_FIRST_DELAY_STEP_MS - 1,
+        )
+        Text(
+            text = "Пауза перед первой попыткой захвата после скрытия оверлея",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
 @Composable
 private fun SettingSwitchRow(

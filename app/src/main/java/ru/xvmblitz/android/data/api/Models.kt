@@ -28,19 +28,3 @@ data class GetUsageResponseDto(
     @SerialName("period_start") val periodStart: String,
     @SerialName("period_end") val periodEnd: String,
 )
-
-@Serializable
-enum class ClientPlatform {
-    @SerialName("android")
-    Android,
-
-    @SerialName("windows")
-    Windows,
-}
-
-@Serializable
-data class GetAppUpdateResponseDto(
-    @SerialName("version") val version: String,
-    @SerialName("download_url") val downloadUrl: String,
-    @SerialName("platform") val platform: ClientPlatform,
-)
