@@ -19,7 +19,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,8 +44,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-import ru.xvmblitz.android.data.settings.AppSettings
-import ru.xvmblitz.android.data.settings.coerceCaptureFirstDelayMs
 import ru.xvmblitz.android.ui.MainUiState
 import ru.xvmblitz.android.ui.components.AdaptiveButton
 import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
@@ -57,7 +54,6 @@ fun MainScreen(
     onAuthClick: () -> Unit,
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
-    onCaptureFirstDelayChange: (Int) -> Unit,
     onUpdateAlliesPosition: (Int, Int) -> Unit,
     onUpdateEnemiesPosition: (Int, Int) -> Unit,
     onOpenGuide: () -> Unit,
@@ -170,11 +166,6 @@ fun MainScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-
-                CaptureDelaySliderRow(
-                    delayMs = state.settings.captureFirstDelayMs,
-                    onDelayChange = onCaptureFirstDelayChange,
-                )
 
                 Text("Координаты союзников", style = MaterialTheme.typography.titleSmall)
                 CoordinateRow(
@@ -294,49 +285,6 @@ private fun CoordinateRow(
 }
 
 private val SettingRowMinHeight = 48.dp
-
-@Composable
-private fun CaptureDelaySliderRow(
-    delayMs: Int,
-    onDelayChange: (Int) -> Unit,
-) {
-    var sliderValue by remember(delayMs) {
-        mutableFloatStateOf(delayMs.toFloat())
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Задержка до скриншота", modifier = Modifier.weight(1f))
-            Text(
-                text = "${coerceCaptureFirstDelayMs(sliderValue.roundToInt())} мс",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Slider(
-            value = sliderValue,
-            onValueChange = { value ->
-                sliderValue = coerceCaptureFirstDelayMs(value.roundToInt()).toFloat()
-            },
-            onValueChangeFinished = {
-                onDelayChange(sliderValue.roundToInt())
-            },
-            valueRange = AppSettings.MIN_CAPTURE_FIRST_DELAY_MS.toFloat()..
-                AppSettings.MAX_CAPTURE_FIRST_DELAY_MS.toFloat(),
-            steps = (AppSettings.MAX_CAPTURE_FIRST_DELAY_MS - AppSettings.MIN_CAPTURE_FIRST_DELAY_MS) /
-                AppSettings.CAPTURE_FIRST_DELAY_STEP_MS - 1,
-        )
-        Text(
-            text = "Пауза перед первой попыткой захвата после скрытия оверлея",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
 
 @Composable
 private fun SettingSwitchRow(

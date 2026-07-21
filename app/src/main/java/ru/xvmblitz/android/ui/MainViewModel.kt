@@ -161,12 +161,6 @@ class MainViewModel(
         }
     }
 
-    fun setCaptureFirstDelayMs(delayMs: Int) {
-        viewModelScope.launch {
-            container.settingsRepository.setCaptureFirstDelayMs(delayMs)
-        }
-    }
-
     fun updateAlliesPosition(x: Int, y: Int) {
         viewModelScope.launch {
             container.settingsRepository.updateAlliesPosition(x, y)

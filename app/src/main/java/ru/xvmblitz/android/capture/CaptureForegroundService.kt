@@ -68,9 +68,8 @@ class CaptureForegroundService : Service() {
 
                 ScreenCaptureSession(applicationContext, resultCode, data).use { session ->
                     var lastErrorMessage: String? = null
-                    val firstDelayMs = container.settingsRepository.current().captureFirstDelayMs.toLong()
                     val attemptDelaysMs = listOf(
-                        firstDelayMs,
+                        0L,
                         RETRY_CAPTURE_DELAY_MS,
                         FINAL_CAPTURE_DELAY_MS,
                     )

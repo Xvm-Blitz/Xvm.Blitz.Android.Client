@@ -117,7 +117,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onOverlayVisibleChange = mainViewModel::setOverlayVisible,
-                                onCaptureFirstDelayChange = mainViewModel::setCaptureFirstDelayMs,
                                 onUpdateAlliesPosition = mainViewModel::updateAlliesPosition,
                                 onUpdateEnemiesPosition = mainViewModel::updateEnemiesPosition,
                                 onOpenGuide = {

@@ -31,17 +31,9 @@ data class AppSettings(
     val configMode: Boolean = false,
     val overlayVisible: Boolean = true,
     val floatingButtonEnabled: Boolean = true,
-    val captureFirstDelayMs: Int = DEFAULT_CAPTURE_FIRST_DELAY_MS,
     val apiBaseUrl: String = ApiDefaults.BASE_URL,
     val guideCompleted: Boolean = false,
-) {
-    companion object {
-        const val DEFAULT_CAPTURE_FIRST_DELAY_MS = 1_000
-        const val MIN_CAPTURE_FIRST_DELAY_MS = 0
-        const val MAX_CAPTURE_FIRST_DELAY_MS = 2_000
-        const val CAPTURE_FIRST_DELAY_STEP_MS = 100
-    }
-}
+)
 
 class SettingsRepository(context: Context) {
     private val dataStore = context.applicationContext.settingsDataStore
@@ -61,9 +53,6 @@ class SettingsRepository(context: Context) {
             configMode = preferences[Keys.CONFIG_MODE] ?: false,
             overlayVisible = preferences[Keys.OVERLAY_VISIBLE] ?: true,
             floatingButtonEnabled = preferences[Keys.FLOATING_BUTTON_ENABLED] ?: true,
-            captureFirstDelayMs = coerceCaptureFirstDelayMs(
-                preferences[Keys.CAPTURE_FIRST_DELAY_MS] ?: AppSettings.DEFAULT_CAPTURE_FIRST_DELAY_MS,
-            ),
             apiBaseUrl = preferences[Keys.API_BASE_URL] ?: ApiDefaults.BASE_URL,
             guideCompleted = preferences[Keys.GUIDE_COMPLETED] ?: false,
         )
@@ -120,12 +109,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    suspend fun setCaptureFirstDelayMs(delayMs: Int) {
-        dataStore.edit { preferences ->
-            preferences[Keys.CAPTURE_FIRST_DELAY_MS] = coerceCaptureFirstDelayMs(delayMs)
-        }
-    }
-
     suspend fun setApiBaseUrl(baseUrl: String) {
         dataStore.edit { preferences ->
             preferences[Keys.API_BASE_URL] = ApiDefaults.normalizeBaseUrl(baseUrl)
@@ -151,17 +134,8 @@ class SettingsRepository(context: Context) {
         val CONFIG_MODE = booleanPreferencesKey("config_mode")
         val OVERLAY_VISIBLE = booleanPreferencesKey("overlay_visible")
         val FLOATING_BUTTON_ENABLED = booleanPreferencesKey("floating_button_enabled")
-        val CAPTURE_FIRST_DELAY_MS = intPreferencesKey("capture_first_delay_ms")
         val API_BASE_URL = stringPreferencesKey("api_base_url")
         val GUIDE_COMPLETED = booleanPreferencesKey("guide_completed")
     }
 }
 
-fun coerceCaptureFirstDelayMs(delayMs: Int): Int {
-    val clamped = delayMs.coerceIn(
-        AppSettings.MIN_CAPTURE_FIRST_DELAY_MS,
-        AppSettings.MAX_CAPTURE_FIRST_DELAY_MS,
-    )
-    val step = AppSettings.CAPTURE_FIRST_DELAY_STEP_MS
-    return ((clamped + step / 2) / step) * step
-}
