@@ -11,12 +11,16 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.data.api.StatisticsApi
+import ru.xvmblitz.android.data.api.SessionsApi
 import ru.xvmblitz.android.data.api.UpdatesApi
 import ru.xvmblitz.android.data.api.UsageApi
 import ru.xvmblitz.android.data.auth.AuthRepository
 import ru.xvmblitz.android.data.auth.SecureStorage
+import ru.xvmblitz.android.data.session.SessionsRepository
 import ru.xvmblitz.android.data.settings.SettingsRepository
+import ru.xvmblitz.android.domain.BattleSessionRuntimeService
 import ru.xvmblitz.android.domain.BattleStatisticsStore
+import ru.xvmblitz.android.domain.SessionSummaryStore
 import java.util.concurrent.TimeUnit
 
 class AppContainer(context: Context) {
@@ -32,6 +36,8 @@ class AppContainer(context: Context) {
     val authRepository = AuthRepository(secureStorage)
     val settingsRepository = SettingsRepository(appContext)
     val battleStatisticsStore = BattleStatisticsStore()
+    val sessionSummaryStore = SessionSummaryStore()
+    val battleSessionRuntimeService = BattleSessionRuntimeService { apiBaseUrl }
 
     val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -79,6 +85,12 @@ class AppContainer(context: Context) {
     var updatesApi: UpdatesApi = retrofit.create(UpdatesApi::class.java)
         private set
 
+    @Volatile
+    var sessionsApi: SessionsApi = retrofit.create(SessionsApi::class.java)
+        private set
+
+    val sessionsRepository = SessionsRepository(sessionsApi, authRepository, secureStorage)
+
     fun setApiBaseUrl(baseUrl: String) {
         require(BuildConfig.DEBUG) { "Custom API base URL is only available in debug builds" }
         val normalized = ApiDefaults.normalizeBaseUrl(baseUrl)
@@ -90,6 +102,8 @@ class AppContainer(context: Context) {
         statisticsApi = retrofit.create(StatisticsApi::class.java)
         usageApi = retrofit.create(UsageApi::class.java)
         updatesApi = retrofit.create(UpdatesApi::class.java)
+        sessionsApi = retrofit.create(SessionsApi::class.java)
+        sessionsRepository.updateApi(sessionsApi)
     }
 
     private fun createRetrofit(baseUrl: String): Retrofit {

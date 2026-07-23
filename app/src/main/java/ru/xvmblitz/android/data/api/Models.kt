@@ -21,8 +21,18 @@ data class BattlePlayerStatisticsDto(
 )
 
 @Serializable
+enum class ApiKeyType {
+    @SerialName("trial")
+    Trial,
+
+    @SerialName("fullAccess")
+    FullAccess,
+}
+
+@Serializable
 data class GetUsageResponseDto(
     @SerialName("api_key") val apiKey: String,
+    @SerialName("type") val type: ApiKeyType = ApiKeyType.FullAccess,
     @SerialName("total_limit") val totalLimit: Int,
     @SerialName("current_usage") val currentUsage: Int,
     @SerialName("period_start") val periodStart: String,

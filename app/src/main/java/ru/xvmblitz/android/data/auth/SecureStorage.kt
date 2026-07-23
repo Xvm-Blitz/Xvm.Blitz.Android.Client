@@ -27,8 +27,15 @@ class SecureStorage(context: Context) {
         prefs.edit().clear().apply()
     }
 
+    fun saveSessionSecretKey(secretKey: String) {
+        prefs.edit().putString(KEY_SESSION_SECRET, secretKey).apply()
+    }
+
+    fun loadSessionSecretKey(): String? = prefs.getString(KEY_SESSION_SECRET, null)
+
     companion object {
         private const val PREFS_NAME = "xvm_blitz_secure"
         private const val KEY_API_KEY = "api_key"
+        private const val KEY_SESSION_SECRET = "session_secret_key"
     }
 }

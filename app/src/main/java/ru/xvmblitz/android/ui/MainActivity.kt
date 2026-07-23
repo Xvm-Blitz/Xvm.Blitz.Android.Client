@@ -119,9 +119,18 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onOverlayVisibleChange = mainViewModel::setOverlayVisible,
-                                onUpdateAlliesPosition = mainViewModel::updateAlliesPosition,
-                                onUpdateEnemiesPosition = mainViewModel::updateEnemiesPosition,
                                 onResetOverlayPositions = mainViewModel::resetOverlayPositions,
+                                onSessionNicknameChange = mainViewModel::setSessionNickname,
+                                onSessionSecretKeyChange = mainViewModel::setSessionSecretKey,
+                                onGenerateSessionSecretKey = mainViewModel::generateSessionSecretKey,
+                                onSelectSession = mainViewModel::selectSession,
+                                onStartSession = mainViewModel::startSession,
+                                onRestoreSessions = mainViewModel::restoreSessions,
+                                onEndSession = mainViewModel::endSession,
+                                onPreviousSessionHistoryPage = mainViewModel::previousSessionHistoryPage,
+                                onNextSessionHistoryPage = mainViewModel::nextSessionHistoryPage,
+                                onRefreshSessionBattles = mainViewModel::refreshSessionBattles,
+                                onToggleSessionSummaryOverlay = mainViewModel::toggleSessionSummaryOverlay,
                                 onOpenGuide = {
                                     navController.navigate(Routes.Guide) {
                                         launchSingleTop = true

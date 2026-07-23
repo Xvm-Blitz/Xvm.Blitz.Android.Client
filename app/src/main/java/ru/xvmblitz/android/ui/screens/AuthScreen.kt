@@ -370,7 +370,9 @@ private fun formatUsageUpdatedAt(epochMs: Long?): String? {
 
 private fun formatUsageDate(raw: String): String {
     return runCatching {
-        OffsetDateTime.parse(raw).format(usageDateFormatter)
+        OffsetDateTime.parse(raw)
+            .atZoneSameInstant(ZoneId.systemDefault())
+            .format(usageDateFormatter)
     }.recoverCatching {
         raw.take(10).let { datePart ->
             val parts = datePart.split("-")

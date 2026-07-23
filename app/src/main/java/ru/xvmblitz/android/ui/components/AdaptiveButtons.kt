@@ -39,12 +39,14 @@ fun AdaptiveOutlinedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
 ) {
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.defaultMinSize(minWidth = 0.dp),
         contentPadding = AdaptiveButtonContentPadding,
+        colors = colors,
     ) {
         AdaptiveButtonLabel(text)
     }

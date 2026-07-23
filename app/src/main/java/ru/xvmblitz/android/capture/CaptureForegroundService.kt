@@ -87,6 +87,7 @@ class CaptureForegroundService : Service() {
                                 container.statisticsApi.getBattleStatistics(apiKey, part)
                             }
                             container.battleStatisticsStore.publish(battle)
+                            container.battleSessionRuntimeService.notifyBattleStarted(battle)
                             container.settingsRepository.setOverlayVisible(true)
                             OverlayService.start(applicationContext)
                             OverlayService.restoreAfterCapture(applicationContext)

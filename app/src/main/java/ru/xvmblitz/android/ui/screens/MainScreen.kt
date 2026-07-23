@@ -1,7 +1,5 @@
 package ru.xvmblitz.android.ui.screens
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -13,19 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,13 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
@@ -56,34 +49,27 @@ fun MainScreen(
     onDownloadUpdate: () -> Unit,
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
-    onUpdateAlliesPosition: (Int, Int) -> Unit,
-    onUpdateEnemiesPosition: (Int, Int) -> Unit,
     onResetOverlayPositions: () -> Unit,
+    onSessionNicknameChange: (String) -> Unit,
+    onSessionSecretKeyChange: (String) -> Unit,
+    onGenerateSessionSecretKey: () -> Unit,
+    onSelectSession: (ru.xvmblitz.android.ui.session.SessionListItem?) -> Unit,
+    onStartSession: () -> Unit,
+    onRestoreSessions: () -> Unit,
+    onEndSession: () -> Unit,
+    onPreviousSessionHistoryPage: () -> Unit,
+    onNextSessionHistoryPage: () -> Unit,
+    onRefreshSessionBattles: () -> Unit,
+    onToggleSessionSummaryOverlay: () -> Unit,
     onOpenGuide: () -> Unit,
     onOpenAbout: () -> Unit,
     onCloseApp: () -> Unit,
 ) {
-    var alliesXText by remember { mutableStateOf(state.settings.alliesX.toString()) }
-    var alliesYText by remember { mutableStateOf(state.settings.alliesY.toString()) }
-    var enemiesXText by remember { mutableStateOf(state.settings.enemiesX.toString()) }
-    var enemiesYText by remember { mutableStateOf(state.settings.enemiesY.toString()) }
     val scrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     val configuration = LocalConfiguration.current
     val focusManager = LocalFocusManager.current
     var configToggleScreenY by remember { mutableFloatStateOf(0f) }
     var preserveConfigToggleScreenY by remember { mutableStateOf<Float?>(null) }
-
-    LaunchedEffect(
-        state.settings.alliesX,
-        state.settings.alliesY,
-        state.settings.enemiesX,
-        state.settings.enemiesY,
-    ) {
-        alliesXText = state.settings.alliesX.toString()
-        alliesYText = state.settings.alliesY.toString()
-        enemiesXText = state.settings.enemiesX.toString()
-        enemiesYText = state.settings.enemiesY.toString()
-    }
 
     suspend fun restoreConfigToggleScreenY() {
         val targetScreenY = preserveConfigToggleScreenY ?: return
@@ -147,6 +133,21 @@ fun MainScreen(
             onDownloadUpdate = onDownloadUpdate,
         )
 
+        SessionSection(
+            session = state.session,
+            onNicknameChange = onSessionNicknameChange,
+            onSecretKeyChange = onSessionSecretKeyChange,
+            onGenerateSecretKey = onGenerateSessionSecretKey,
+            onSelectSession = onSelectSession,
+            onStartSession = onStartSession,
+            onRestoreSessions = onRestoreSessions,
+            onEndSession = onEndSession,
+            onPreviousHistoryPage = onPreviousSessionHistoryPage,
+            onNextHistoryPage = onNextSessionHistoryPage,
+            onRefreshBattles = onRefreshSessionBattles,
+            onToggleSummaryOverlay = onToggleSessionSummaryOverlay,
+        )
+
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -171,38 +172,10 @@ fun MainScreen(
                 )
                 if (state.settings.configMode) {
                     Text(
-                        text = "Экран зафиксирован горизонтально. Перетащите панели или задайте координаты ниже.",
+                        text = "Экран зафиксирован горизонтально. Перетащите панели и оверлей суммаризации. Угол и края меняют размер.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-
-                Text("Координаты союзников", style = MaterialTheme.typography.titleSmall)
-                CoordinateRow(
-                    xText = alliesXText,
-                    yText = alliesYText,
-                    onXChange = { alliesXText = it.filter(Char::isDigit).take(5) },
-                    onYChange = { alliesYText = it.filter(Char::isDigit).take(5) },
-                    onApply = {
-                        val x = alliesXText.toIntOrNull() ?: return@CoordinateRow false
-                        val y = alliesYText.toIntOrNull() ?: return@CoordinateRow false
-                        onUpdateAlliesPosition(x, y)
-                        true
-                    },
-                )
-
-                Text("Координаты противников", style = MaterialTheme.typography.titleSmall)
-                CoordinateRow(
-                    xText = enemiesXText,
-                    yText = enemiesYText,
-                    onXChange = { enemiesXText = it.filter(Char::isDigit).take(5) },
-                    onYChange = { enemiesYText = it.filter(Char::isDigit).take(5) },
-                    onApply = {
-                        val x = enemiesXText.toIntOrNull() ?: return@CoordinateRow false
-                        val y = enemiesYText.toIntOrNull() ?: return@CoordinateRow false
-                        onUpdateEnemiesPosition(x, y)
-                        true
-                    },
-                )
 
                 AdaptiveOutlinedButton(
                     text = "Сбросить координаты",
@@ -229,73 +202,6 @@ fun MainScreen(
         )
 
         Spacer(modifier = Modifier.height(8.dp))
-    }
-}
-
-@Composable
-private fun CoordinateRow(
-    xText: String,
-    yText: String,
-    onXChange: (String) -> Unit,
-    onYChange: (String) -> Unit,
-    onApply: () -> Boolean,
-) {
-    var savedPulse by remember { mutableIntStateOf(0) }
-    var showSaved by remember { mutableStateOf(false) }
-    val checkScale by animateFloatAsState(
-        targetValue = if (showSaved) 1f else 0.85f,
-        animationSpec = tween(220),
-        label = "saved-scale",
-    )
-
-    LaunchedEffect(savedPulse) {
-        if (savedPulse <= 0) return@LaunchedEffect
-        showSaved = true
-        delay(1_400)
-        showSaved = false
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = xText,
-                onValueChange = onXChange,
-                label = { Text("X") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = yText,
-                onValueChange = onYChange,
-                label = { Text("Y") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f),
-            )
-        }
-        AdaptiveButton(
-            text = if (showSaved) "Сохранено" else "Применить",
-            onClick = {
-                if (onApply()) {
-                    savedPulse += 1
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .scale(checkScale),
-            colors = if (showSaved) {
-                ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.tertiary,
-                )
-            } else {
-                ButtonDefaults.buttonColors()
-            },
-        )
     }
 }
 

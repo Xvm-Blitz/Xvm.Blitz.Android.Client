@@ -68,10 +68,12 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var enemiesView: ComposeView? = null
     private var captureButtonView: ComposeView? = null
     private var directionHintView: ComposeView? = null
+    private var sessionSummaryView: ComposeView? = null
     private var alliesParams: WindowManager.LayoutParams? = null
     private var enemiesParams: WindowManager.LayoutParams? = null
     private var captureButtonParams: WindowManager.LayoutParams? = null
     private var directionHintParams: WindowManager.LayoutParams? = null
+    private var sessionSummaryParams: WindowManager.LayoutParams? = null
     private var collectJob: Job? = null
     private var currentSettings = AppSettings()
     private var currentBattle = BattleUiState()
@@ -79,6 +81,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var captureButtonOriginOffsetX = 0
     private var captureButtonOriginOffsetY = 0
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
+    private val previewSessionSummaryScale = MutableStateFlow<PanelScalePreview?>(null)
     private val fabErrorPulse = MutableStateFlow(0)
     private val fabErrorMessage = MutableStateFlow<String?>(null)
     private val captureButtonOffScreenDirection =
@@ -88,6 +91,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         override fun onConfigurationChanged(newConfig: Configuration) {
             updateCaptureButtonWindowPosition()
             updateCaptureButtonDirectionHint()
+            updateSessionSummaryOverlayLayout(adjustScale = true)
         }
 
         override fun onLowMemory() = Unit
@@ -120,6 +124,11 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 container.battleStatisticsStore.state.collectLatest { battle ->
                     currentBattle = battle
                     renderPanels()
+                }
+            }
+            launch {
+                container.sessionSummaryStore.overlay.collectLatest {
+                    sessionSummaryView?.invalidate()
                 }
             }
         }
@@ -201,7 +210,40 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 windowManager.addView(view, directionHintParams)
             }
         }
+        if (sessionSummaryView == null) {
+            sessionSummaryParams = createLayoutParams(
+                currentSettings.sessionSummaryOverlayX,
+                currentSettings.sessionSummaryOverlayY,
+            )
+            sessionSummaryView = createComposeOverlayView { SessionSummaryOverlayContentWrapper() }.also { view ->
+                attachSessionSummaryDrag(view)
+                view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    updateSessionSummaryOverlayLayout(adjustScale = true)
+                }
+                windowManager.addView(view, sessionSummaryParams)
+            }
+        }
         renderPanels()
+    }
+
+    @Composable
+    private fun SessionSummaryOverlayContentWrapper() {
+        val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
+        val summary by XvmBlitzApp.instance.container.sessionSummaryStore.overlay.collectAsState()
+        val preview by previewSessionSummaryScale.collectAsState()
+        if (!settings.sessionSummaryOverlayVisible && !settings.configMode) {
+            return
+        }
+        val scaleX = preview?.scaleX ?: settings.sessionSummaryOverlayScaleX
+        val scaleY = preview?.scaleY ?: settings.sessionSummaryOverlayScaleY
+        val useExample = settings.configMode && summary.battlesText == "—"
+        SessionSummaryOverlayContent(
+            battlesText = if (useExample) "12 б." else summary.battlesText,
+            winRateText = if (useExample) "58.3%" else summary.winRateText,
+            damageText = if (useExample) "1840 ур." else summary.damageText,
+            scaleX = scaleX,
+            scaleY = scaleY,
+        )
     }
 
     private fun createComposeOverlayView(content: @Composable () -> Unit): ComposeView {
@@ -322,6 +364,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             alliesView?.visibility = android.view.View.GONE
             enemiesView?.visibility = android.view.View.GONE
             captureButtonView?.visibility = android.view.View.GONE
+            sessionSummaryView?.visibility = android.view.View.GONE
         } else {
             renderPanels()
         }
@@ -340,18 +383,26 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             enemiesView?.visibility = android.view.View.GONE
             captureButtonView?.visibility = android.view.View.GONE
             directionHintView?.visibility = android.view.View.GONE
+            sessionSummaryView?.visibility = android.view.View.GONE
             return
         }
 
         val showPanels = currentSettings.overlayVisible &&
             (currentBattle.hasBattle || currentSettings.configMode)
         val showCaptureButton = currentSettings.overlayVisible && !showPanels
+        val showSessionSummary = currentSettings.overlayVisible &&
+            (currentSettings.sessionSummaryOverlayVisible || currentSettings.configMode)
         alliesView?.visibility =
             if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
         enemiesView?.visibility =
             if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
         captureButtonView?.visibility =
             if (showCaptureButton) android.view.View.VISIBLE else android.view.View.GONE
+        sessionSummaryView?.visibility =
+            if (showSessionSummary) android.view.View.VISIBLE else android.view.View.GONE
+        if (showSessionSummary) {
+            updateSessionSummaryOverlayLayout(adjustScale = true)
+        }
         updateCaptureButtonDirectionHint()
     }
 
@@ -366,8 +417,73 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             params.y = settings.enemiesY
             enemiesView?.let { windowManager.updateViewLayout(it, params) }
         }
+        sessionSummaryParams?.let { params ->
+            params.x = settings.sessionSummaryOverlayX
+            params.y = settings.sessionSummaryOverlayY
+            sessionSummaryView?.let { windowManager.updateViewLayout(it, params) }
+        }
         updateCaptureButtonWindowPosition()
         renderPanels()
+        if (settings.sessionSummaryOverlayVisible || settings.configMode) {
+            updateSessionSummaryOverlayLayout(adjustScale = true)
+        }
+    }
+
+    private fun updateSessionSummaryOverlayLayout(adjustScale: Boolean) {
+        val view = sessionSummaryView ?: return
+        val params = sessionSummaryParams ?: return
+        view.post {
+            if (view.visibility != android.view.View.VISIBLE) {
+                return@post
+            }
+            val screen = currentScreenSizePx()
+            val width = view.width.coerceAtLeast(1)
+            val height = view.height.coerceAtLeast(1)
+            var scaleX = previewSessionSummaryScale.value?.scaleX
+                ?: currentSettings.sessionSummaryOverlayScaleX
+            val scaleY = previewSessionSummaryScale.value?.scaleY
+                ?: currentSettings.sessionSummaryOverlayScaleY
+            if (adjustScale && width > screen.width * 0.92f) {
+                val fittedScaleX = coerceSessionSummaryScaleX(
+                    scaleX * (screen.width * 0.92f / width),
+                )
+                if (fittedScaleX < scaleX - 0.01f) {
+                    scaleX = fittedScaleX
+                    scope.launch {
+                        XvmBlitzApp.instance.container.settingsRepository
+                            .updateSessionSummaryOverlayScale(scaleX, scaleY)
+                    }
+                }
+            }
+            val (clampedX, clampedY) = clampOverlayPosition(
+                x = params.x,
+                y = params.y,
+                viewWidth = width,
+                viewHeight = height,
+                screen = screen,
+            )
+            if (clampedX != params.x || clampedY != params.y) {
+                params.x = clampedX
+                params.y = clampedY
+                runCatching { windowManager.updateViewLayout(view, params) }
+                scope.launch {
+                    XvmBlitzApp.instance.container.settingsRepository
+                        .updateSessionSummaryOverlayPosition(params.x, params.y)
+                }
+            }
+        }
+    }
+
+    private fun clampOverlayPosition(
+        x: Int,
+        y: Int,
+        viewWidth: Int,
+        viewHeight: Int,
+        screen: ScreenSizePx,
+    ): Pair<Int, Int> {
+        val maxX = (screen.width - viewWidth).coerceAtLeast(0)
+        val maxY = (screen.height - viewHeight).coerceAtLeast(0)
+        return x.coerceIn(0, maxX) to y.coerceIn(0, maxY)
     }
 
     private fun updateCaptureButtonWindowPosition() {
@@ -518,6 +634,190 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 else -> false
             }
         }
+    }
+
+    private fun attachSessionSummaryDrag(view: ComposeView) {
+        var initialX = 0
+        var initialY = 0
+        var touchX = 0f
+        var touchY = 0f
+        var initialScaleX = 1f
+        var initialScaleY = 1f
+        var candidateGesture = PanelGesture.Drag
+        var gesture = PanelGesture.None
+        var dragging = false
+        var longPressTriggered = false
+        var longPressJob: Job? = null
+        val density = resources.displayMetrics.density
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong()
+
+        view.setOnTouchListener { _, event ->
+            val params = sessionSummaryParams ?: return@setOnTouchListener false
+            val configMode = currentSettings.configMode
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    touchX = event.rawX
+                    touchY = event.rawY
+                    dragging = false
+                    longPressTriggered = false
+                    val preview = previewSessionSummaryScale.value
+                    initialScaleX = preview?.scaleX ?: currentSettings.sessionSummaryOverlayScaleX
+                    initialScaleY = preview?.scaleY ?: currentSettings.sessionSummaryOverlayScaleY
+                    candidateGesture = if (configMode) {
+                        val width = if (view.width > 0) {
+                            view.width
+                        } else {
+                            (OverlayBaseSessionSummaryWidthDp * density * initialScaleX).toInt()
+                        }
+                        val height = if (view.height > 0) {
+                            view.height
+                        } else {
+                            (OverlayBaseSessionSummaryHeightDp * density * initialScaleY).toInt()
+                        }
+                        resolvePanelGesture(event.x, event.y, width, height, density)
+                    } else {
+                        PanelGesture.Drag
+                    }
+                    gesture = if (configMode) PanelGesture.Pending else PanelGesture.None
+                    longPressJob?.cancel()
+                    longPressJob = scope.launch {
+                        delay(longPressTimeoutMs)
+                        if (!dragging &&
+                            !longPressTriggered &&
+                            (gesture == PanelGesture.Pending || gesture == PanelGesture.None)
+                        ) {
+                            longPressTriggered = true
+                            gesture = PanelGesture.None
+                            showSessionSummaryContextMenu(view)
+                        }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        longPressJob?.cancel()
+                        dragging = true
+                        if (configMode && gesture == PanelGesture.Pending) {
+                            gesture = when (candidateGesture) {
+                                PanelGesture.ResizeHorizontal ->
+                                    if (abs(dx) >= abs(dy)) PanelGesture.ResizeHorizontal else PanelGesture.Drag
+                                PanelGesture.ResizeVertical ->
+                                    if (abs(dy) >= abs(dx)) PanelGesture.ResizeVertical else PanelGesture.Drag
+                                PanelGesture.ResizeBoth -> PanelGesture.ResizeBoth
+                                else -> PanelGesture.Drag
+                            }
+                        } else if (!configMode) {
+                            gesture = PanelGesture.Drag
+                        }
+                    }
+                    when (gesture) {
+                        PanelGesture.Drag -> {
+                            params.x = initialX + dx.toInt()
+                            params.y = initialY + dy.toInt()
+                            windowManager.updateViewLayout(view, params)
+                        }
+                        PanelGesture.ResizeHorizontal -> {
+                            previewSessionSummaryScale.value = PanelScalePreview(
+                                scaleX = sessionSummaryOverlayScaleXFromWidthDelta(
+                                    initialScaleX,
+                                    initialScaleY,
+                                    dx,
+                                    density,
+                                ),
+                                scaleY = initialScaleY,
+                            )
+                        }
+                        PanelGesture.ResizeVertical -> {
+                            previewSessionSummaryScale.value = PanelScalePreview(
+                                scaleX = initialScaleX,
+                                scaleY = sessionSummaryOverlayScaleYFromHeightDelta(
+                                    initialScaleY,
+                                    dy,
+                                    density,
+                                ),
+                            )
+                        }
+                        PanelGesture.ResizeBoth -> {
+                            previewSessionSummaryScale.value = PanelScalePreview(
+                                scaleX = sessionSummaryOverlayScaleXFromWidthDelta(
+                                    initialScaleX,
+                                    initialScaleY,
+                                    dx,
+                                    density,
+                                ),
+                                scaleY = sessionSummaryOverlayScaleYFromHeightDelta(
+                                    initialScaleY,
+                                    dy,
+                                    density,
+                                ),
+                            )
+                        }
+                        PanelGesture.Pending, PanelGesture.None -> Unit
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    longPressJob?.cancel()
+                    if (!longPressTriggered) {
+                        when (gesture) {
+                            PanelGesture.Drag -> {
+                                if (dragging) {
+                                    scope.launch {
+                                        XvmBlitzApp.instance.container.settingsRepository
+                                            .updateSessionSummaryOverlayPosition(params.x, params.y)
+                                    }
+                                }
+                            }
+                            PanelGesture.ResizeHorizontal,
+                            PanelGesture.ResizeVertical,
+                            PanelGesture.ResizeBoth,
+                            -> {
+                                val preview = previewSessionSummaryScale.value
+                                scope.launch {
+                                    if (preview != null) {
+                                        XvmBlitzApp.instance.container.settingsRepository
+                                            .updateSessionSummaryOverlayScale(preview.scaleX, preview.scaleY)
+                                    }
+                                    previewSessionSummaryScale.value = null
+                                }
+                            }
+                            PanelGesture.Pending, PanelGesture.None -> Unit
+                        }
+                    }
+                    gesture = PanelGesture.None
+                    candidateGesture = PanelGesture.Drag
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun showSessionSummaryContextMenu(anchor: View) {
+        val params = sessionSummaryParams ?: return
+        setWindowFocusable(anchor, params, focusable = true)
+        val popup = PopupMenu(this, anchor, Gravity.CENTER)
+        popup.menu.add(0, MENU_HIDE_SESSION_SUMMARY, 0, "Скрыть")
+        popup.setOnMenuItemClickListener { item ->
+            if (item.itemId == MENU_HIDE_SESSION_SUMMARY) {
+                scope.launch {
+                    XvmBlitzApp.instance.container.settingsRepository
+                        .setSessionSummaryOverlayVisible(false)
+                }
+                true
+            } else {
+                false
+            }
+        }
+        popup.setOnDismissListener {
+            setWindowFocusable(anchor, params, focusable = false)
+        }
+        popup.show()
     }
 
     private fun attachPanelDrag(view: ComposeView, kind: PanelKind) {
@@ -767,14 +1067,17 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         enemiesView?.let { runCatching { windowManager.removeView(it) } }
         captureButtonView?.let { runCatching { windowManager.removeView(it) } }
         directionHintView?.let { runCatching { windowManager.removeView(it) } }
+        sessionSummaryView?.let { runCatching { windowManager.removeView(it) } }
         alliesView = null
         enemiesView = null
         captureButtonView = null
         directionHintView = null
+        sessionSummaryView = null
         alliesParams = null
         enemiesParams = null
         captureButtonParams = null
         directionHintParams = null
+        sessionSummaryParams = null
     }
 
     private data class ScreenSizePx(
@@ -848,6 +1151,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val MENU_HIDE_STATS = 1
+        private const val MENU_HIDE_SESSION_SUMMARY = 2
         const val OVERLAY_HIDE_DELAY_MS = 400L
         private const val CAPTURE_BUTTON_DRAG_THRESHOLD_DP = 24f
         const val ACTION_TOGGLE = "ru.xvmblitz.android.overlay.TOGGLE"

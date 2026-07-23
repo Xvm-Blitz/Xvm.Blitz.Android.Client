@@ -106,6 +106,8 @@ private data class GuideStep(
 
 private enum class GuideIllustration {
     Auth,
+    Session,
+    SessionSecretKey,
     OverlayPermission,
     GameFiles,
     Fab,
@@ -121,6 +123,23 @@ private val GuideSteps = listOf(
         title = "Авторизация",
         description = "Откройте «Профиль» / «Войти» и введите API‑ключ. После входа можно смотреть квоту и сменить ключ.",
         illustration = GuideIllustration.Auth,
+    ),
+    GuideStep(
+        title = "Сессия боя",
+        description = """
+            В блоке «Сессия боя» укажите никнейм в игре и секретный ключ, затем нажмите «Начать сессию».
+            После каждого захвата статистики бой автоматически добавляется в сессию.
+            Для trial-ключа доступна только агрегированная статистика без списка боёв.
+        """.trimIndent(),
+        illustration = GuideIllustration.Session,
+    ),
+    GuideStep(
+        title = "Секретный ключ",
+        description = """
+            Секретный ключ нужен для восстановления истории сессий на другом устройстве.
+            Сохраните его в надёжном месте. Кнопка «Сгенерировать» создаёт новый ключ и копирует его в буфер обмена.
+        """.trimIndent(),
+        illustration = GuideIllustration.SessionSecretKey,
     ),
     GuideStep(
         title = "Поверх других приложений",
@@ -741,6 +760,8 @@ private fun GuideIllustrationBox(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (illustration) {
             GuideIllustration.Auth -> AuthIllustration()
+            GuideIllustration.Session -> SessionIllustration()
+            GuideIllustration.SessionSecretKey -> SessionSecretKeyIllustration()
             GuideIllustration.OverlayPermission -> OverlayPermissionIllustration()
             GuideIllustration.GameFiles -> GameFilesIllustration()
             GuideIllustration.Fab -> FabIllustration()
@@ -889,7 +910,7 @@ private fun AuthIllustration() {
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
-                text = "  ••••••••‑API‑KEY",
+                text = "  ••••••••••••••••",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             )
         }
@@ -903,6 +924,82 @@ private fun AuthIllustration() {
             contentAlignment = Alignment.Center,
         ) {
             Text("Войти", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun SessionIllustration() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Никнейм", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .height(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text("  PlayerNick", modifier = Modifier.padding(start = 8.dp), fontSize = 12.sp)
+        }
+        Text("Сессия", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .height(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text("  Активная · 23.07.2026", modifier = Modifier.padding(start = 8.dp), fontSize = 12.sp)
+        }
+        Box(
+            modifier = Modifier
+                .width(120.dp)
+                .height(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Начать сессию", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun SessionSecretKeyIllustration() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+                .padding(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Секретный ключ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text(
+                    text = "a1b2c3d4e5f6…",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .width(140.dp)
+                .height(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Сгенерировать", fontSize = 11.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

@@ -16,6 +16,8 @@ import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.overlay.OverlayBaseFontSizeSp
 import ru.xvmblitz.android.overlay.coerceOverlayScaleX
 import ru.xvmblitz.android.overlay.coerceOverlayScaleY
+import ru.xvmblitz.android.overlay.coerceSessionSummaryScaleX
+import ru.xvmblitz.android.overlay.coerceSessionSummaryScaleY
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "xvm_settings")
 
@@ -33,6 +35,13 @@ data class AppSettings(
     val floatingButtonEnabled: Boolean = true,
     val apiBaseUrl: String = ApiDefaults.BASE_URL,
     val guideCompleted: Boolean = false,
+    val sessionNickname: String = "",
+    val selectedSessionId: String? = null,
+    val sessionSummaryOverlayX: Int = 48,
+    val sessionSummaryOverlayY: Int = 72,
+    val sessionSummaryOverlayScaleX: Float = 1f,
+    val sessionSummaryOverlayScaleY: Float = 1f,
+    val sessionSummaryOverlayVisible: Boolean = false,
 )
 
 class SettingsRepository(context: Context) {
@@ -55,6 +64,17 @@ class SettingsRepository(context: Context) {
             floatingButtonEnabled = preferences[Keys.FLOATING_BUTTON_ENABLED] ?: true,
             apiBaseUrl = preferences[Keys.API_BASE_URL] ?: ApiDefaults.BASE_URL,
             guideCompleted = preferences[Keys.GUIDE_COMPLETED] ?: false,
+            sessionNickname = preferences[Keys.SESSION_NICKNAME] ?: "",
+            selectedSessionId = preferences[Keys.SELECTED_SESSION_ID],
+            sessionSummaryOverlayX = preferences[Keys.SESSION_SUMMARY_OVERLAY_X] ?: 48,
+            sessionSummaryOverlayY = preferences[Keys.SESSION_SUMMARY_OVERLAY_Y] ?: 72,
+            sessionSummaryOverlayScaleX = coerceSessionSummaryScaleX(
+                preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_X] ?: 1f,
+            ),
+            sessionSummaryOverlayScaleY = coerceSessionSummaryScaleY(
+                preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_Y] ?: 1f,
+            ),
+            sessionSummaryOverlayVisible = preferences[Keys.SESSION_SUMMARY_OVERLAY_VISIBLE] ?: false,
         )
     }
 
@@ -133,6 +153,42 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setSessionNickname(nickname: String) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SESSION_NICKNAME] = nickname.trim()
+        }
+    }
+
+    suspend fun setSelectedSessionId(sessionId: String?) {
+        dataStore.edit { preferences ->
+            if (sessionId.isNullOrBlank()) {
+                preferences.remove(Keys.SELECTED_SESSION_ID)
+            } else {
+                preferences[Keys.SELECTED_SESSION_ID] = sessionId
+            }
+        }
+    }
+
+    suspend fun updateSessionSummaryOverlayPosition(x: Int, y: Int) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_X] = x
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_Y] = y
+        }
+    }
+
+    suspend fun updateSessionSummaryOverlayScale(scaleX: Float, scaleY: Float) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_X] = coerceSessionSummaryScaleX(scaleX)
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_Y] = coerceSessionSummaryScaleY(scaleY)
+        }
+    }
+
+    suspend fun setSessionSummaryOverlayVisible(visible: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_VISIBLE] = visible
+        }
+    }
+
     private object Keys {
         val ALLIES_X = intPreferencesKey("allies_x")
         val ALLIES_Y = intPreferencesKey("allies_y")
@@ -148,6 +204,12 @@ class SettingsRepository(context: Context) {
         val FLOATING_BUTTON_ENABLED = booleanPreferencesKey("floating_button_enabled")
         val API_BASE_URL = stringPreferencesKey("api_base_url")
         val GUIDE_COMPLETED = booleanPreferencesKey("guide_completed")
+        val SESSION_NICKNAME = stringPreferencesKey("session_nickname")
+        val SELECTED_SESSION_ID = stringPreferencesKey("selected_session_id")
+        val SESSION_SUMMARY_OVERLAY_X = intPreferencesKey("session_summary_overlay_x")
+        val SESSION_SUMMARY_OVERLAY_Y = intPreferencesKey("session_summary_overlay_y")
+        val SESSION_SUMMARY_OVERLAY_SCALE_X = floatPreferencesKey("session_summary_overlay_scale_x")
+        val SESSION_SUMMARY_OVERLAY_SCALE_Y = floatPreferencesKey("session_summary_overlay_scale_y")
+        val SESSION_SUMMARY_OVERLAY_VISIBLE = booleanPreferencesKey("session_summary_overlay_visible")
     }
 }
-
