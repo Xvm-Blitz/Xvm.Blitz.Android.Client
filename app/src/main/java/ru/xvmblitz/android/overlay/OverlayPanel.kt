@@ -152,6 +152,14 @@ private fun PanelEdgeHandle(
 }
 
 @Composable
+internal fun OverlayResizeCornerHandle(
+    scale: Float,
+    modifier: Modifier = Modifier,
+) {
+    PanelCornerHandle(scale = scale, modifier = modifier)
+}
+
+@Composable
 private fun PanelCornerHandle(
     scale: Float,
     modifier: Modifier = Modifier,

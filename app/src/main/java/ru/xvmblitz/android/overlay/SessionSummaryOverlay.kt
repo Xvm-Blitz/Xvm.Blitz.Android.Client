@@ -2,7 +2,7 @@ package ru.xvmblitz.android.overlay
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -26,26 +26,35 @@ fun SessionSummaryOverlayContent(
     damageText: String,
     scaleX: Float = 1f,
     scaleY: Float = 1f,
+    configMode: Boolean = false,
 ) {
     val fontSize = sessionSummaryOverlayFontSizeSp(scaleY)
     val horizontalPadding = sessionSummaryOverlayPaddingHorizontalDp(scaleX, scaleY).dp
     val verticalPadding = sessionSummaryOverlayPaddingVerticalDp(scaleY).dp
     val spacing = sessionSummaryOverlaySpacingDp(scaleX, scaleY).dp
     val maxWidth = (LocalConfiguration.current.screenWidthDp * 0.92f).dp
-    Row(
-        modifier = Modifier
-            .widthIn(max = maxWidth)
-            .clip(RoundedCornerShape(5.dp))
-            .background(Color(0xB3000000))
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        horizontalArrangement = Arrangement.spacedBy(spacing),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SummaryOverlayText(text = battlesText, fontSize = fontSize)
-        SummaryOverlayText(text = "·", fontSize = fontSize, alpha = 0.5f)
-        SummaryOverlayText(text = winRateText, fontSize = fontSize, weight = FontWeight.SemiBold)
-        SummaryOverlayText(text = "·", fontSize = fontSize, alpha = 0.5f)
-        SummaryOverlayText(text = damageText, fontSize = fontSize)
+    Box {
+        Row(
+            modifier = Modifier
+                .widthIn(max = maxWidth)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color(0xB3000000))
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SummaryOverlayText(text = battlesText, fontSize = fontSize)
+            SummaryOverlayText(text = "·", fontSize = fontSize, alpha = 0.5f)
+            SummaryOverlayText(text = winRateText, fontSize = fontSize, weight = FontWeight.SemiBold)
+            SummaryOverlayText(text = "·", fontSize = fontSize, alpha = 0.5f)
+            SummaryOverlayText(text = damageText, fontSize = fontSize)
+        }
+        if (configMode) {
+            OverlayResizeCornerHandle(
+                scale = minOf(scaleX, scaleY).coerceIn(0.85f, 1.4f),
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
+        }
     }
 }
 

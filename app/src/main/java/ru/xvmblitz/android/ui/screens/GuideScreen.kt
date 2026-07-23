@@ -125,9 +125,9 @@ private val GuideSteps = listOf(
         illustration = GuideIllustration.Auth,
     ),
     GuideStep(
-        title = "Сессия боя",
+        title = "Сессии боёв",
         description = """
-            В блоке «Сессия боя» укажите никнейм в игре и секретный ключ, затем нажмите «Начать сессию».
+            В блоке «Сессии боёв» укажите никнейм в игре и секретный ключ, затем нажмите «Начать сессию».
             После каждого захвата статистики бой автоматически добавляется в сессию.
             Для trial-ключа доступна только агрегированная статистика без списка боёв.
         """.trimIndent(),
@@ -181,7 +181,7 @@ private val GuideSteps = listOf(
     ),
     GuideStep(
         title = "Перемещение панелей",
-        description = "Включите «Режим настройки панелей» (экран станет горизонтальным) и перетащите таблицу или задайте координаты вручную.",
+        description = "Перетащите таблицу союзников или противников в любой момент. В режиме настройки можно задать координаты вручную и сбросить их.",
         illustration = GuideIllustration.ConfigMove,
     ),
     GuideStep(
@@ -931,13 +931,16 @@ private fun AuthIllustration() {
 @Composable
 private fun SessionIllustration() {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Никнейм", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text("Никнейм", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(0.82f))
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
+                .fillMaxWidth(0.82f)
                 .height(36.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
@@ -945,10 +948,10 @@ private fun SessionIllustration() {
         ) {
             Text("  PlayerNick", modifier = Modifier.padding(start = 8.dp), fontSize = 12.sp)
         }
-        Text("Сессия", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text("Сессия", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(0.82f))
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
+                .fillMaxWidth(0.82f)
                 .height(36.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
@@ -972,12 +975,15 @@ private fun SessionIllustration() {
 @Composable
 private fun SessionSecretKeyIllustration() {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
+                .fillMaxWidth(0.82f)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
                 .padding(12.dp),

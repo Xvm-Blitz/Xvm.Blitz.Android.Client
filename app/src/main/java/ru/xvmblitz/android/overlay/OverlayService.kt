@@ -243,6 +243,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             damageText = if (useExample) "1840 ур." else summary.damageText,
             scaleX = scaleX,
             scaleY = scaleY,
+            configMode = settings.configMode,
         )
     }
 
@@ -829,6 +830,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         var initialScaleY = 1f
         var candidateGesture = PanelGesture.Drag
         var gesture = PanelGesture.None
+        var dragging = false
         var longPressTriggered = false
         var longPressJob: Job? = null
         val density = resources.displayMetrics.density
@@ -848,6 +850,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    dragging = false
                     longPressTriggered = false
                     val preview = previewPanelScale.value
                     initialScaleX = preview?.scaleX ?: currentSettings.panelScaleX
@@ -874,8 +877,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                    if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                         longPressJob?.cancel()
+                        dragging = true
                         if (configMode && gesture == PanelGesture.Pending) {
                             gesture = when (candidateGesture) {
                                 PanelGesture.ResizeHorizontal ->
@@ -885,6 +889,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 PanelGesture.ResizeBoth -> PanelGesture.ResizeBoth
                                 else -> PanelGesture.Drag
                             }
+                        } else if (!configMode) {
+                            gesture = PanelGesture.Drag
                         }
                     }
                     when (gesture) {
@@ -920,7 +926,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     if (!longPressTriggered) {
                         when (gesture) {
                             PanelGesture.Drag -> {
-                                if (configMode) {
+                                if (dragging) {
                                     scope.launch {
                                         val settingsRepository = XvmBlitzApp.instance.container.settingsRepository
                                         when (kind) {

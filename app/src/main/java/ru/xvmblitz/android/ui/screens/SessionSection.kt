@@ -59,7 +59,7 @@ fun SessionSection(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Сессия боя", style = MaterialTheme.typography.titleMedium)
+        Text("Сессии боёв", style = MaterialTheme.typography.titleMedium)
         SessionWarningBanner()
 
         Card(modifier = Modifier.fillMaxWidth()) {

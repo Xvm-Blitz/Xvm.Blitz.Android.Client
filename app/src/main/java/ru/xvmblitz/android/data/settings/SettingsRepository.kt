@@ -120,6 +120,10 @@ class SettingsRepository(context: Context) {
             preferences[Keys.ENEMIES_Y] = defaults.enemiesY
             preferences[Keys.CAPTURE_BUTTON_X] = defaults.captureButtonX
             preferences[Keys.CAPTURE_BUTTON_Y] = defaults.captureButtonY
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_X] = defaults.sessionSummaryOverlayX
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_Y] = defaults.sessionSummaryOverlayY
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_X] = defaults.sessionSummaryOverlayScaleX
+            preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_Y] = defaults.sessionSummaryOverlayScaleY
         }
     }
 
