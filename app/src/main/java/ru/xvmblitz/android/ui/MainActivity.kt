@@ -17,7 +17,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -47,6 +50,7 @@ class MainActivity : ComponentActivity() {
                     )
                     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
                     val incomingIntent by incomingIntents.collectAsStateWithLifecycle()
+                    val lifecycleOwner = LocalLifecycleOwner.current
 
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission(),
@@ -70,6 +74,12 @@ class MainActivity : ComponentActivity() {
                             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         } else {
                             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        }
+                    }
+
+                    LaunchedEffect(lifecycleOwner) {
+                        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                            mainViewModel.ensureActiveSessionConnection()
                         }
                     }
 
@@ -130,6 +140,8 @@ class MainActivity : ComponentActivity() {
                                 onPreviousSessionHistoryPage = mainViewModel::previousSessionHistoryPage,
                                 onNextSessionHistoryPage = mainViewModel::nextSessionHistoryPage,
                                 onRefreshSessionBattles = mainViewModel::refreshSessionBattles,
+                                onPreviousSessionBattlesPage = mainViewModel::previousSessionBattlesPage,
+                                onNextSessionBattlesPage = mainViewModel::nextSessionBattlesPage,
                                 onToggleSessionSummaryOverlay = mainViewModel::toggleSessionSummaryOverlay,
                                 onOpenGuide = {
                                     navController.navigate(Routes.Guide) {

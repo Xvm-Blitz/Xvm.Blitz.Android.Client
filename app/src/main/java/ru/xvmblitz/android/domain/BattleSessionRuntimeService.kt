@@ -65,6 +65,12 @@ class BattleSessionRuntimeService(
         }
     }
 
+    suspend fun ensureConnected() {
+        mutex.withLock {
+            ensureConnectedInternal()
+        }
+    }
+
     fun notifyBattleStarted(battle: BattleStatisticsDto) {
         scope.launch {
             mutex.withLock {
@@ -73,6 +79,7 @@ class BattleSessionRuntimeService(
                 if (sessionId.isNullOrBlank() || nickname.isNullOrBlank()) {
                     return@withLock
                 }
+                ensureConnectedInternal()
                 val hub = connection
                 if (hub == null || hub.connectionState != HubConnectionState.CONNECTED) {
                     return@withLock
@@ -88,7 +95,24 @@ class BattleSessionRuntimeService(
     suspend fun dispose() {
         mutex.withLock {
             disconnectInternal()
+            activeSessionId = null
+            sessionNickname = null
         }
+    }
+
+    private suspend fun ensureConnectedInternal() {
+        val sessionId = activeSessionId
+        val nickname = sessionNickname
+        if (sessionId.isNullOrBlank() || nickname.isNullOrBlank()) {
+            return
+        }
+        if (connection?.connectionState == HubConnectionState.CONNECTED) {
+            return
+        }
+        disconnectInternal()
+        activeSessionId = sessionId
+        sessionNickname = nickname
+        connectInternal(sessionId)
     }
 
     private suspend fun connectInternal(sessionId: String) {
@@ -123,6 +147,15 @@ class BattleSessionRuntimeService(
             },
             SessionEndedHubDto::class.java,
         )
+        hub.onClosed {
+            scope.launch {
+                mutex.withLock {
+                    if (connection === hub) {
+                        connection = null
+                    }
+                }
+            }
+        }
         withContext(Dispatchers.IO) {
             runCatching { hub.start().blockingAwait() }
         }
@@ -130,6 +163,9 @@ class BattleSessionRuntimeService(
             withContext(Dispatchers.IO) {
                 runCatching { hub.stop().blockingAwait() }
             }
+            return
+        }
+        if (hub.connectionState != HubConnectionState.CONNECTED) {
             return
         }
         connection = hub

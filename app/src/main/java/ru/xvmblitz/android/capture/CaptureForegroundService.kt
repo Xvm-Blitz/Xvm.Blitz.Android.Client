@@ -63,6 +63,7 @@ class CaptureForegroundService : Service() {
 
             try {
                 CaptureEvents.emit(CaptureEvents.Result.Loading)
+                container.battleSessionRuntimeService.ensureConnected()
                 OverlayService.hideForCapture(applicationContext)
                 delay(OverlayService.OVERLAY_HIDE_DELAY_MS)
 

@@ -52,6 +52,9 @@ data class SessionExtendedStatisticsDto(
     @SerialName("createdAt") val createdAt: String,
     @SerialName("endedAt") val endedAt: String? = null,
     @SerialName("battles") val battles: List<SessionBattleBriefDto> = emptyList(),
+    @SerialName("page") val page: Int = 1,
+    @SerialName("pageSize") val pageSize: Int = 10,
+    @SerialName("totalCount") val totalCount: Int = 0,
 )
 
 @Serializable

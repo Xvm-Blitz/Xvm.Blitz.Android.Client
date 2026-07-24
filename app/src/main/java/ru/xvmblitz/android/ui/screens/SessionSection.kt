@@ -30,10 +30,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import ru.xvmblitz.android.ui.components.AdaptiveButton
 import ru.xvmblitz.android.ui.components.AdaptiveOutlinedButton
 import ru.xvmblitz.android.ui.session.SessionBattleListItem
@@ -53,6 +57,8 @@ fun SessionSection(
     onPreviousHistoryPage: () -> Unit,
     onNextHistoryPage: () -> Unit,
     onRefreshBattles: () -> Unit,
+    onPreviousBattlesPage: () -> Unit,
+    onNextBattlesPage: () -> Unit,
     onToggleSummaryOverlay: () -> Unit,
 ) {
     Column(
@@ -130,6 +136,8 @@ fun SessionSection(
                     SessionBattlesSection(
                         session = session,
                         onRefreshBattles = onRefreshBattles,
+                        onPreviousBattlesPage = onPreviousBattlesPage,
+                        onNextBattlesPage = onNextBattlesPage,
                         onToggleSummaryOverlay = onToggleSummaryOverlay,
                     )
                 }
@@ -264,6 +272,8 @@ private fun SessionHistoryDropdown(
 private fun SessionBattlesSection(
     session: SessionUiState,
     onRefreshBattles: () -> Unit,
+    onPreviousBattlesPage: () -> Unit,
+    onNextBattlesPage: () -> Unit,
     onToggleSummaryOverlay: () -> Unit,
 ) {
     Text(session.battlesHeader, style = MaterialTheme.typography.titleSmall)
@@ -309,6 +319,25 @@ private fun SessionBattlesSection(
         )
     } else {
         SessionBattlesTable(battles = session.battles)
+        if (session.showBattlesPagination) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AdaptiveOutlinedButton(
+                    text = "←",
+                    onClick = onPreviousBattlesPage,
+                    enabled = session.hasPreviousBattlesPage && !session.isBattlesLoading,
+                )
+                Text(session.battlesPageText, style = MaterialTheme.typography.bodyMedium)
+                AdaptiveOutlinedButton(
+                    text = "→",
+                    onClick = onNextBattlesPage,
+                    enabled = session.hasNextBattlesPage && !session.isBattlesLoading,
+                )
+            }
+        }
     }
     if (session.hasSummary) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -330,6 +359,37 @@ private fun SessionBattlesSection(
 @Composable
 private fun SessionBattlesTable(battles: List<SessionBattleListItem>) {
     val horizontalScroll = rememberScrollState()
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val headerStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+    val bodyStyle = MaterialTheme.typography.bodySmall
+    val columnGap = 8.dp
+    val resultPadding = 8.dp
+
+    val columnWidths = remember(battles, headerStyle, bodyStyle, density) {
+        fun measureWidth(text: String, isHeader: Boolean): Dp {
+            val style = if (isHeader) headerStyle else bodyStyle
+            val widthPx = textMeasurer.measure(text = text, style = style).size.width
+            return with(density) { widthPx.toDp() }
+        }
+
+        var startedAt = measureWidth("Начало", isHeader = true)
+        var tank = measureWidth("Танк", isHeader = true)
+        var result = measureWidth("Результат", isHeader = true) + resultPadding
+        var frags = measureWidth("Фраги", isHeader = true)
+        var damage = measureWidth("Урон", isHeader = true)
+
+        battles.forEach { battle ->
+            startedAt = max(startedAt, measureWidth(battle.startedAtText, isHeader = false))
+            tank = max(tank, measureWidth(battle.tankName, isHeader = false))
+            result = max(result, measureWidth(battle.resultText, isHeader = false) + resultPadding)
+            frags = max(frags, measureWidth(battle.fragsText, isHeader = false))
+            damage = max(damage, measureWidth(battle.damageText, isHeader = false))
+        }
+
+        SessionBattleColumnWidths(startedAt, tank, result, frags, damage)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -342,6 +402,8 @@ private fun SessionBattlesTable(battles: List<SessionBattleListItem>) {
             result = "Результат",
             frags = "Фраги",
             damage = "Урон",
+            widths = columnWidths,
+            columnGap = columnGap,
             isHeader = true,
         )
         battles.forEach { battle ->
@@ -351,11 +413,21 @@ private fun SessionBattlesTable(battles: List<SessionBattleListItem>) {
                 result = battle.resultText,
                 frags = battle.fragsText,
                 damage = battle.damageText,
+                widths = columnWidths,
+                columnGap = columnGap,
                 resultBackground = battle.resultBackground,
             )
         }
     }
 }
+
+private data class SessionBattleColumnWidths(
+    val startedAt: Dp,
+    val tank: Dp,
+    val result: Dp,
+    val frags: Dp,
+    val damage: Dp,
+)
 
 @Composable
 private fun SessionBattleTableRow(
@@ -364,6 +436,8 @@ private fun SessionBattleTableRow(
     result: String,
     frags: String,
     damage: String,
+    widths: SessionBattleColumnWidths,
+    columnGap: Dp,
     isHeader: Boolean = false,
     resultBackground: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Transparent,
 ) {
@@ -373,23 +447,22 @@ private fun SessionBattleTableRow(
         MaterialTheme.typography.bodySmall
     }
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(columnGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(startedAt, style = style, modifier = Modifier.width(128.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(tank, style = style, modifier = Modifier.width(120.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(startedAt, style = style, modifier = Modifier.width(widths.startedAt), maxLines = 1)
+        Text(tank, style = style, modifier = Modifier.width(widths.tank), maxLines = 1)
         Box(
             modifier = Modifier
-                .width(96.dp)
+                .width(widths.result)
                 .clip(RoundedCornerShape(4.dp))
                 .background(resultBackground)
                 .padding(horizontal = 4.dp, vertical = 2.dp),
         ) {
-            Text(result, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(result, style = style, maxLines = 1)
         }
-        Text(frags, style = style, modifier = Modifier.width(48.dp), maxLines = 1)
-        Text(damage, style = style, modifier = Modifier.width(56.dp), maxLines = 1)
+        Text(frags, style = style, modifier = Modifier.width(widths.frags), maxLines = 1)
+        Text(damage, style = style, modifier = Modifier.width(widths.damage), maxLines = 1)
     }
 }
 

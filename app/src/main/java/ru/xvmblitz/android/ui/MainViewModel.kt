@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -384,7 +386,19 @@ class MainViewModel(
 
     fun refreshSessionBattles() {
         viewModelScope.launch {
-            loadSessionBattles()
+            loadSessionBattles(page = sessionState.value.battlesPage)
+        }
+    }
+
+    fun previousSessionBattlesPage() {
+        viewModelScope.launch {
+            loadSessionBattles(page = sessionState.value.battlesPage - 1)
+        }
+    }
+
+    fun nextSessionBattlesPage() {
+        viewModelScope.launch {
+            loadSessionBattles(page = sessionState.value.battlesPage + 1)
         }
     }
 
@@ -502,11 +516,13 @@ class MainViewModel(
         }
     }
 
-    private suspend fun loadSessionBattles() {
+    private suspend fun loadSessionBattles(page: Int = 1) {
         val selected = sessionState.value.selectedSession
         if (selected == null) {
             sessionState.value = sessionState.value.copy(
                 battles = emptyList(),
+                battlesPage = 1,
+                battlesTotalCount = 0,
                 isBattlesLoading = false,
                 hasSummary = false,
                 totalSummary = "",
@@ -530,6 +546,8 @@ class MainViewModel(
             } catch (exception: Exception) {
                 sessionState.value = sessionState.value.copy(
                     battles = emptyList(),
+                    battlesPage = 1,
+                    battlesTotalCount = 0,
                     hasSummary = false,
                     totalSummary = "",
                     winRateSummary = "",
@@ -541,9 +559,14 @@ class MainViewModel(
                 return
             }
 
-            sessionState.value = sessionState.value.copy(battles = emptyList())
+            val targetPage = page.coerceAtLeast(1)
 
             if (usage.type == ApiKeyType.Trial) {
+                sessionState.value = sessionState.value.copy(
+                    battles = emptyList(),
+                    battlesPage = 1,
+                    battlesTotalCount = 0,
+                )
                 val result = container.sessionsRepository.getAggregatedStatistics(selected.id)
                 if (result.isFailure) {
                     clearSessionBattlesSummary()
@@ -555,21 +578,48 @@ class MainViewModel(
                 }
                 applyAggregatedSummary(result.getOrThrow())
             } else {
-                val result = container.sessionsRepository.getExtendedStatistics(selected.id)
-                if (result.isFailure) {
-                    clearSessionBattlesSummary()
-                    setSessionStatus(
-                        result.exceptionOrNull()?.message ?: "Не удалось загрузить бои сессии",
-                        isError = true,
+                coroutineScope {
+                    val extendedDeferred = async {
+                        container.sessionsRepository.getExtendedStatistics(
+                            sessionId = selected.id,
+                            page = targetPage,
+                            pageSize = SessionUiState.SESSION_BATTLES_PAGE_SIZE,
+                        )
+                    }
+                    val aggregatedDeferred = async {
+                        container.sessionsRepository.getAggregatedStatistics(selected.id)
+                    }
+
+                    val extendedResult = extendedDeferred.await()
+                    if (extendedResult.isFailure) {
+                        sessionState.value = sessionState.value.copy(
+                            battles = emptyList(),
+                            battlesPage = 1,
+                            battlesTotalCount = 0,
+                        )
+                        clearSessionBattlesSummary()
+                        setSessionStatus(
+                            extendedResult.exceptionOrNull()?.message ?: "Не удалось загрузить бои сессии",
+                            isError = true,
+                        )
+                        return@coroutineScope
+                    }
+
+                    val statistics = extendedResult.getOrThrow()
+                    val battles = statistics.battles.map(SessionBattleListItem::fromDto)
+                    sessionState.value = sessionState.value.copy(
+                        battles = battles,
+                        battlesPage = statistics.page,
+                        battlesTotalCount = statistics.totalCount,
                     )
-                    return
+
+                    val aggregatedResult = aggregatedDeferred.await()
+                    if (aggregatedResult.isSuccess) {
+                        applyAggregatedSummary(aggregatedResult.getOrThrow())
+                    } else {
+                        clearSessionBattlesSummary()
+                    }
                 }
-                val statistics = result.getOrThrow()
-                val battles = statistics.battles
-                    .sortedByDescending { it.createdAt }
-                    .map(SessionBattleListItem::fromDto)
-                sessionState.value = sessionState.value.copy(battles = battles)
-                updateSessionBattlesSummary(statistics.battles)
             }
         } finally {
             sessionState.value = sessionState.value.copy(isBattlesLoading = false)
@@ -590,28 +640,6 @@ class MainViewModel(
             averageFragsSummary = "Среднее количество фрагов: ${formatOneDecimal(statistics.averageFrags)}",
         )
         applySessionOverlaySummary(statistics.totalBattles, winRate, statistics.averageDamage)
-    }
-
-    private fun updateSessionBattlesSummary(battles: List<SessionBattleBriefDto>) {
-        val finished = battles.filter { !it.endedAt.isNullOrBlank() }
-        if (finished.isEmpty()) {
-            clearSessionBattlesSummary()
-            return
-        }
-        val wins = finished.count { it.result == "win" || it.result == "won" }
-        val totalFrags = finished.sumOf { (it.frags ?: 0).toInt() }
-        val totalDamage = finished.sumOf { (it.damageDealt ?: 0).toInt() }
-        val winRate = wins * 100.0 / finished.size
-        val averageFrags = totalFrags.toDouble() / finished.size
-        val averageDamage = totalDamage.toDouble() / finished.size
-        sessionState.value = sessionState.value.copy(
-            hasSummary = true,
-            totalSummary = "Всего боёв: ${finished.size}",
-            winRateSummary = "Побед: ${formatOneDecimal(winRate)}%",
-            averageDamageSummary = "Средний урон: ${averageDamage.toInt()}",
-            averageFragsSummary = "Среднее количество фрагов: ${formatOneDecimal(averageFrags)}",
-        )
-        applySessionOverlaySummary(finished.size, winRate, averageDamage)
     }
 
     private fun clearSessionBattlesSummary() {
@@ -649,14 +677,26 @@ class MainViewModel(
     }
 
     private fun upsertSessionBattle(battle: SessionBattleListItem) {
-        val battles = sessionState.value.battles.toMutableList()
+        val current = sessionState.value
+        val battles = current.battles.toMutableList()
         val index = battles.indexOfFirst { it.id == battle.id }
         if (index >= 0) {
             battles[index] = battle
-        } else {
-            battles.add(0, battle)
+            sessionState.value = current.copy(battles = battles)
+            return
         }
-        sessionState.value = sessionState.value.copy(battles = battles)
+
+        val totalCount = current.battlesTotalCount + 1
+        if (current.battlesPage == 1) {
+            battles.add(0, battle)
+            while (battles.size > SessionUiState.SESSION_BATTLES_PAGE_SIZE) {
+                battles.removeAt(battles.lastIndex)
+            }
+        }
+        sessionState.value = current.copy(
+            battles = battles,
+            battlesTotalCount = totalCount,
+        )
     }
 
     private fun updateSessionBattlesSummaryFromHub(
@@ -681,6 +721,13 @@ class MainViewModel(
         container.sessionSummaryStore.applySummary(totalBattles, winRate, averageDamage)
     }
 
+    fun ensureActiveSessionConnection() {
+        viewModelScope.launch {
+            updateActiveSessionConnection()
+            container.battleSessionRuntimeService.ensureConnected()
+        }
+    }
+
     private suspend fun updateActiveSessionConnection() {
         val selected = sessionState.value.selectedSession
         if (selected?.isActive == true) {
@@ -692,6 +739,7 @@ class MainViewModel(
 
     private suspend fun reconnectActiveSession() {
         updateActiveSessionConnection()
+        container.battleSessionRuntimeService.ensureConnected()
     }
 
     private fun setSessionStatus(message: String, isError: Boolean) {

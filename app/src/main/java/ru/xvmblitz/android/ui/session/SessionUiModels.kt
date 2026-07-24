@@ -69,6 +69,8 @@ data class SessionUiState(
     val availableSessions: List<SessionListItem> = emptyList(),
     val selectedSession: SessionListItem? = null,
     val battles: List<SessionBattleListItem> = emptyList(),
+    val battlesPage: Int = 1,
+    val battlesTotalCount: Int = 0,
     val isBusy: Boolean = false,
     val statusMessage: String? = null,
     val isStatusError: Boolean = false,
@@ -91,10 +93,10 @@ data class SessionUiState(
         get() = !isBusy && selectedSession?.isActive == true
 
     val hasNoSessionBattles: Boolean
-        get() = hasSelectedSession && !isBattlesLoading && battles.isEmpty() && !isTrialStatistics
+        get() = hasSelectedSession && !isBattlesLoading && battlesTotalCount == 0 && !isTrialStatistics
 
     val showStatisticsDisclaimer: Boolean
-        get() = hasSelectedSession && (hasSummary || battles.isNotEmpty())
+        get() = hasSelectedSession && (hasSummary || battlesTotalCount > 0)
 
     val summaryOverlayButtonText: String
         get() = if (isSummaryOverlayVisible) {
@@ -107,8 +109,23 @@ data class SessionUiState(
         get() = if (selectedSession == null) {
             "Бои сессии"
         } else {
-            "Бои сессии (${battles.size})"
+            "Бои сессии ($battlesTotalCount)"
         }
+
+    val battlesTotalPages: Int
+        get() = maxOf(1, (battlesTotalCount + SESSION_BATTLES_PAGE_SIZE - 1) / SESSION_BATTLES_PAGE_SIZE)
+
+    val battlesPageText: String
+        get() = "Стр. $battlesPage / $battlesTotalPages"
+
+    val hasPreviousBattlesPage: Boolean
+        get() = battlesPage > 1
+
+    val hasNextBattlesPage: Boolean
+        get() = battlesPage < battlesTotalPages
+
+    val showBattlesPagination: Boolean
+        get() = hasSelectedSession && battlesTotalCount > 0 && !isTrialStatistics
 
     val historyTotalPages: Int
         get() = maxOf(1, (historyTotalCount + SESSION_HISTORY_PAGE_SIZE - 1) / SESSION_HISTORY_PAGE_SIZE)
@@ -130,6 +147,7 @@ data class SessionUiState(
 
     companion object {
         const val SESSION_HISTORY_PAGE_SIZE = 10
+        const val SESSION_BATTLES_PAGE_SIZE = 10
         const val STATISTICS_DISCLAIMER_TEXT =
             "Точность расширенных расчётов не гарантируется и может не совпадать с реальностью."
     }

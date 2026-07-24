@@ -49,9 +49,13 @@ class SessionsRepository(
             throw Exception(resolveError(exception), exception)
         }
 
-    suspend fun getExtendedStatistics(sessionId: String): Result<SessionExtendedStatisticsDto> =
+    suspend fun getExtendedStatistics(
+        sessionId: String,
+        page: Int,
+        pageSize: Int,
+    ): Result<SessionExtendedStatisticsDto> =
         runCatching {
-            val items = sessionsApi.getExtendedStatistics(requireApiKey(), sessionId)
+            val items = sessionsApi.getExtendedStatistics(requireApiKey(), sessionId, page, pageSize)
             items.firstOrNull() ?: error("Сессия не найдена")
         }.recoverCatching { exception ->
             throw Exception(resolveSessionStatisticsError(exception), exception)

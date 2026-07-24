@@ -27,6 +27,8 @@ interface SessionsApi {
     suspend fun getExtendedStatistics(
         @Header("X-Xvm-Api-Key") apiKey: String,
         @Query("uuid") sessionId: String,
+        @Query("page") page: Int,
+        @Query("page_size") pageSize: Int,
     ): List<SessionExtendedStatisticsDto>
 
     @GET("v1/sessions/statistics/aggregated")

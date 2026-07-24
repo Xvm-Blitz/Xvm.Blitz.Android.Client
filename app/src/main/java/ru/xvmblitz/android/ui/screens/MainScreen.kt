@@ -60,6 +60,8 @@ fun MainScreen(
     onPreviousSessionHistoryPage: () -> Unit,
     onNextSessionHistoryPage: () -> Unit,
     onRefreshSessionBattles: () -> Unit,
+    onPreviousSessionBattlesPage: () -> Unit,
+    onNextSessionBattlesPage: () -> Unit,
     onToggleSessionSummaryOverlay: () -> Unit,
     onOpenGuide: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -145,6 +147,8 @@ fun MainScreen(
             onPreviousHistoryPage = onPreviousSessionHistoryPage,
             onNextHistoryPage = onNextSessionHistoryPage,
             onRefreshBattles = onRefreshSessionBattles,
+            onPreviousBattlesPage = onPreviousSessionBattlesPage,
+            onNextBattlesPage = onNextSessionBattlesPage,
             onToggleSummaryOverlay = onToggleSessionSummaryOverlay,
         )
 
