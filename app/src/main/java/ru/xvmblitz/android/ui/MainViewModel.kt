@@ -287,7 +287,7 @@ class MainViewModel(
             setSessionStatus("Создание сессии…", isError = false)
             try {
                 val result = container.sessionsRepository.create()
-                result.getOrElse { exception ->
+                val createdSessionId = result.getOrElse { exception ->
                     handleSessionError(
                         exception = exception,
                         defaultMessage = "Не удалось создать сессию",
@@ -295,7 +295,7 @@ class MainViewModel(
                     )
                     return@launch
                 }
-                loadSessionHistory(page = 1, showBusy = false)
+                loadSessionHistory(page = 1, showBusy = false, preferSessionId = createdSessionId)
                 setSessionStatus("Сессия создана", isError = false)
             } finally {
                 sessionState.value = sessionState.value.copy(isBusy = false)
@@ -424,7 +424,11 @@ class MainViewModel(
         }
     }
 
-    private suspend fun loadSessionHistory(page: Int, showBusy: Boolean = true) {
+    private suspend fun loadSessionHistory(
+        page: Int,
+        showBusy: Boolean = true,
+        preferSessionId: String? = null,
+    ) {
         if (page < 1) {
             return
         }
@@ -455,9 +459,18 @@ class MainViewModel(
             val settings = container.settingsRepository.current()
             val previouslySelectedId = sessionState.value.selectedSession?.id ?: settings.selectedSessionId
             val sessions = payload.sessions.map(SessionListItem::fromDto)
-            val selected = previouslySelectedId?.let { id -> sessions.firstOrNull { it.id == id } }
-                ?: sessions.firstOrNull { it.isActive }
-                ?: sessions.firstOrNull()
+            val selected = when {
+                preferSessionId != null ->
+                    sessions.firstOrNull { it.id == preferSessionId }
+                        ?: sessions.firstOrNull { it.isActive }
+                        ?: sessions.firstOrNull()
+                previouslySelectedId != null ->
+                    sessions.firstOrNull { it.id == previouslySelectedId }
+                        ?: sessions.firstOrNull { it.isActive }
+                        ?: sessions.firstOrNull()
+                else ->
+                    sessions.firstOrNull { it.isActive } ?: sessions.firstOrNull()
+            }
             sessionState.value = sessionState.value.copy(
                 availableSessions = sessions,
                 historyPage = payload.page,

@@ -124,10 +124,9 @@ fun SessionSection(
                     enabled = session.canEndSelectedSession,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                SessionStatusTexts(session = session)
             }
         }
-
-        SessionStatusTexts(session = session)
     }
 }
 

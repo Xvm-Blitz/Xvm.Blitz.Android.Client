@@ -6,6 +6,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.parseToJsonElement
 import okhttp3.Authenticator
 import okhttp3.ConnectionSpec
 import okhttp3.MediaType.Companion.toMediaType
@@ -135,12 +139,12 @@ class AppContainer(context: Context) {
 
     val battleSessionRuntimeService = BattleSessionRuntimeService(
         apiBaseUrlProvider = { apiBaseUrl },
-        accessTokenProvider = { authRepository.getAccessToken() },
+        accessTokenProvider = { getValidAccessToken() },
     )
 
     val presenceRuntimeService = PresenceRuntimeService(
         apiBaseUrlProvider = { apiBaseUrl },
-        accessTokenProvider = { authRepository.getAccessToken() },
+        accessTokenProvider = { getValidAccessToken() },
     )
 
     fun openIdLoginUrl(): String {
@@ -168,6 +172,41 @@ class AppContainer(context: Context) {
         synchronized(tokenLock) {
             return refreshAccessTokenLocked()
         }
+    }
+
+    fun getValidAccessToken(): String? {
+        synchronized(tokenLock) {
+            val token = authRepository.getAccessToken() ?: return null
+            if (!isAccessTokenExpiringSoon(token)) {
+                return token
+            }
+            if (!refreshAccessTokenLocked()) {
+                return null
+            }
+            return authRepository.getAccessToken()
+        }
+    }
+
+    private fun isAccessTokenExpiringSoon(accessToken: String): Boolean {
+        val exp = runCatching {
+            val parts = accessToken.split('.')
+            if (parts.size < 2) {
+                return true
+            }
+            var payload = parts[1]
+            val padding = (4 - payload.length % 4) % 4
+            if (padding > 0) {
+                payload += "=".repeat(padding)
+            }
+            val jsonPayload = String(
+                android.util.Base64.decode(payload, android.util.Base64.URL_SAFE),
+                Charsets.UTF_8,
+            )
+            val obj = json.parseToJsonElement(jsonPayload) as? JsonObject
+            obj?.get("exp")?.jsonPrimitive?.longOrNull
+        }.getOrNull() ?: return true
+        val expiresAtMs = exp * 1000L
+        return expiresAtMs - System.currentTimeMillis() <= 2 * 60 * 1000L
     }
 
     private fun createRetrofit(baseUrl: String): Retrofit {
