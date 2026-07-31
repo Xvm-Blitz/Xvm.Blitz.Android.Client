@@ -149,7 +149,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             ACTION_CAPTURE -> startCaptureAfterHidingOverlay()
             ACTION_ACCESS_DENIED -> {
                 val message = intent.getStringExtra(EXTRA_ACCESS_DENIED_MESSAGE)
-                    ?: AppAlertNotifier.DEFAULT_API_KEY_MESSAGE
+                    ?: AppAlertNotifier.DEFAULT_AUTH_MESSAGE
                 signalFabAccessDenied(message)
             }
             ACTION_STOP -> stopSelf()

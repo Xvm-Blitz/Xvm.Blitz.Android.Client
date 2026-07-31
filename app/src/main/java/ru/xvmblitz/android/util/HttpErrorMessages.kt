@@ -21,33 +21,23 @@ object HttpErrorMessages {
             return null
         }
 
-        val response = exception.response()
-        val body = runCatching { response?.errorBody()?.string().orEmpty() }.getOrDefault("")
-        val problemDetails = parseProblemDetails(body)
-        val baseMessage = resolveBaseMessage(problemDetails)
-            ?: if (includeRetryAfter) {
-                AppAlertNotifier.fallbackMessageForStatus(code)
-            } else {
-                fallbackMessageForSessionStatistics(code)
-            }
+        val parsed = readProblem(exception)
+        val baseMessage = resolveUserMessage(parsed.problemDetails, code, includeRetryAfter)
+            ?: return null
 
         if (!includeRetryAfter) {
             return baseMessage
         }
 
-        val retryAfter = resolveRetryAfter(
-            problemDetails = problemDetails,
-            retryAfterHeader = response?.headers()?.get("Retry-After"),
-        )
-        val retryText = formatRetryAfter(retryAfter) ?: return baseMessage
+        val retryText = formatRetryAfter(parsed.retryAfter) ?: return baseMessage
         return "$baseMessage\n$retryText"
     }
 
     fun fallbackMessageForSessionStatistics(code: Int): String =
         when (code) {
-            401 -> AppAlertNotifier.DEFAULT_API_KEY_MESSAGE
-            403 -> AppAlertNotifier.REQUEST_DENIED_MESSAGE
-            else -> AppAlertNotifier.REQUEST_DENIED_MESSAGE
+            401 -> AppAlertNotifier.DEFAULT_AUTH_MESSAGE
+            403 -> "Расширенная статистика недоступна для пробного аккаунта"
+            else -> "Не удалось получить статистику сессии"
         }
 
     fun fromHttpExceptionForSessionCreate(exception: HttpException): String? {
@@ -56,25 +46,23 @@ object HttpErrorMessages {
             return null
         }
 
-        retryAfterSeconds(exception)?.let { remainingSeconds ->
-            return sessionCreateRateLimitMessage(remainingSeconds)
+        val parsed = readProblem(exception)
+        parsed.retryAfter?.let { retryAfter ->
+            val now = OffsetDateTime.now()
+            if (retryAfter.isAfter(now)) {
+                val remainingSeconds = Duration.between(now, retryAfter).toSeconds().coerceAtLeast(1L)
+                return sessionCreateRateLimitMessage(remainingSeconds)
+            }
+            return sessionCreateRateLimitMessage(0)
         }
 
-        val response = exception.response()
-        val body = runCatching { response?.errorBody()?.string().orEmpty() }.getOrDefault("")
-        val problemDetails = parseProblemDetails(body)
-        return resolveBaseMessage(problemDetails)
+        return resolveUserMessage(parsed.problemDetails, code, includeRetryAfter = true)
             ?: AppAlertNotifier.fallbackMessageForStatus(code)
     }
 
     fun retryAfterSeconds(exception: HttpException): Long? {
-        val response = exception.response() ?: return null
-        val body = runCatching { response.errorBody()?.string().orEmpty() }.getOrDefault("")
-        val problemDetails = parseProblemDetails(body)
-        val retryAfter = resolveRetryAfter(
-            problemDetails = problemDetails,
-            retryAfterHeader = response.headers()["Retry-After"],
-        ) ?: return null
+        val parsed = readProblem(exception)
+        val retryAfter = parsed.retryAfter ?: return null
         val now = OffsetDateTime.now()
         if (!retryAfter.isAfter(now)) {
             return 0L
@@ -114,6 +102,64 @@ object HttpErrorMessages {
         return runCatching { json.decodeFromString<ProblemDetailsDto>(body) }.getOrNull()
     }
 
+    private fun readProblem(exception: HttpException): ParsedProblem {
+        val response = exception.response()
+        val body = runCatching { response?.errorBody()?.string().orEmpty() }.getOrDefault("")
+        val problemDetails = parseProblemDetails(body)
+        val retryAfter = resolveRetryAfter(
+            problemDetails = problemDetails,
+            retryAfterHeader = response?.headers()?.get("Retry-After"),
+        )
+        return ParsedProblem(problemDetails, retryAfter, body)
+    }
+
+    private fun resolveUserMessage(
+        problemDetails: ProblemDetailsDto?,
+        statusCode: Int,
+        includeRetryAfter: Boolean,
+    ): String? {
+        val fromType = messageForProblemType(problemDetails?.type)
+        val fromFields = resolveBaseMessage(problemDetails)
+        val preferred = when {
+            !fromFields.isNullOrBlank() && !isGenericDeniedMessage(fromFields) -> fromFields
+            !fromType.isNullOrBlank() -> fromType
+            !fromFields.isNullOrBlank() -> fromFields
+            else -> null
+        }
+        if (!preferred.isNullOrBlank()) {
+            return preferred
+        }
+        return if (includeRetryAfter) {
+            AppAlertNotifier.fallbackMessageForStatus(statusCode)
+        } else {
+            fallbackMessageForSessionStatistics(statusCode)
+        }
+    }
+
+    private fun messageForProblemType(type: String?): String? {
+        val normalized = type?.substringAfterLast('/')?.trim().orEmpty()
+        if (normalized.isEmpty()) {
+            return null
+        }
+        return when (normalized) {
+            "OpenIdMissing", "OpenIdAccountNotFound", "AccessNotFound" ->
+                AppAlertNotifier.DEFAULT_AUTH_MESSAGE
+            "QuotaExceeded" ->
+                "Квота запросов превышена"
+            "TestRateLimited" ->
+                "Тестовый доступ можно использовать не чаще заданного интервала"
+            "TrialAccessNotAllowed" ->
+                "Расширенная статистика недоступна для пробного аккаунта"
+            else -> null
+        }
+    }
+
+    private fun isGenericDeniedMessage(message: String): Boolean {
+        val normalized = message.trim().trimEnd('.')
+        return normalized.equals("Запрос отклонён", ignoreCase = true) ||
+            normalized.equals("Request denied", ignoreCase = true)
+    }
+
     private fun resolveBaseMessage(problemDetails: ProblemDetailsDto?): String? {
         if (problemDetails == null) {
             return null
@@ -128,8 +174,9 @@ object HttpErrorMessages {
 
     private fun sanitizeUserMessage(message: String): String {
         val cleaned = message
-            .replace(Regex("(?i)X-Xvm-Api-Key"), "")
-            .replace(Regex("(?i)api ключ в заголовке\\s*"), "API ключ ")
+            .replace(Regex("(?i)Bad Request"), "Некорректный запрос")
+            .replace(Regex("(?i)Request denied"), "Запрос отклонён")
+            .replace(Regex("(?i)Quota exceeded"), "Квота запросов превышена")
             .replace(Regex("\\s{2,}"), " ")
             .trim()
         if (cleaned.isEmpty()) {
@@ -172,4 +219,10 @@ object HttpErrorMessages {
         val remainingSeconds = Duration.between(now, retryAfter).toSeconds().coerceAtLeast(1L)
         return "Повторите через $remainingSeconds секунд"
     }
+
+    private data class ParsedProblem(
+        val problemDetails: ProblemDetailsDto?,
+        val retryAfter: OffsetDateTime?,
+        val rawBody: String,
+    )
 }

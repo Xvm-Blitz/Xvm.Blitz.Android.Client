@@ -1,7 +1,6 @@
 package ru.xvmblitz.android.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -47,9 +45,6 @@ import ru.xvmblitz.android.ui.session.SessionUiState
 @Composable
 fun SessionSection(
     session: SessionUiState,
-    onNicknameChange: (String) -> Unit,
-    onSecretKeyChange: (String) -> Unit,
-    onGenerateSecretKey: () -> Unit,
     onSelectSession: (SessionListItem?) -> Unit,
     onStartSession: () -> Unit,
     onRestoreSessions: () -> Unit,
@@ -67,50 +62,6 @@ fun SessionSection(
     ) {
         Text("Сессии боёв", style = MaterialTheme.typography.titleMedium)
         SessionWarningBanner()
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text("Параметры сессии", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(
-                    value = session.nickname,
-                    onValueChange = onNicknameChange,
-                    label = { Text("Никнейм в игре") },
-                    singleLine = true,
-                    enabled = !session.isBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = session.secretKey,
-                    onValueChange = onSecretKeyChange,
-                    label = { Text("Секретный ключ") },
-                    singleLine = true,
-                    enabled = !session.isBusy,
-                    visualTransformation = PasswordVisualTransformation('*'),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (session.isSecretKeyCopiedHighlight) {
-                                Modifier.border(
-                                    width = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shape = RoundedCornerShape(4.dp),
-                                )
-                            } else {
-                                Modifier
-                            },
-                        ),
-                )
-                AdaptiveOutlinedButton(
-                    text = "Сгенерировать",
-                    onClick = onGenerateSecretKey,
-                    enabled = !session.isBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(

@@ -10,6 +10,18 @@ data class BattleStatisticsDto(
 )
 
 @Serializable
+enum class XvmUsageStatus {
+    @SerialName("currently")
+    Currently,
+
+    @SerialName("previously")
+    Previously,
+
+    @SerialName("never")
+    Never,
+}
+
+@Serializable
 data class BattlePlayerStatisticsDto(
     @SerialName("id") val id: Long? = null,
     @SerialName("nickname") val nickname: String? = null,
@@ -18,10 +30,11 @@ data class BattlePlayerStatisticsDto(
     @SerialName("table_number") val tableNumber: Int = 0,
     @SerialName("win_rate_percents") val winRatePercents: Double? = null,
     @SerialName("number_of_battles") val numberOfBattles: Int? = null,
+    @SerialName("xvm_usage") val xvmUsage: XvmUsageStatus = XvmUsageStatus.Never,
 )
 
 @Serializable
-enum class ApiKeyType {
+enum class AccessType {
     @SerialName("trial")
     Trial,
 
@@ -31,12 +44,23 @@ enum class ApiKeyType {
 
 @Serializable
 data class GetUsageResponseDto(
-    @SerialName("api_key") val apiKey: String,
-    @SerialName("type") val type: ApiKeyType = ApiKeyType.FullAccess,
+    @SerialName("type") val type: AccessType = AccessType.FullAccess,
     @SerialName("total_limit") val totalLimit: Int,
     @SerialName("current_usage") val currentUsage: Int,
     @SerialName("period_start") val periodStart: String,
     @SerialName("period_end") val periodEnd: String,
+)
+
+@Serializable
+data class OpenIdRefreshRequestDto(
+    @SerialName("refresh_token") val refreshToken: String,
+)
+
+@Serializable
+data class OpenIdAuthResponseDto(
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    @SerialName("lesta_expires_at") val lestaExpiresAt: String? = null,
 )
 
 @Serializable

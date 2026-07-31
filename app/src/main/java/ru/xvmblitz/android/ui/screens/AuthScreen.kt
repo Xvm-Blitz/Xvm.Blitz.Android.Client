@@ -1,5 +1,7 @@
 package ru.xvmblitz.android.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,7 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -59,7 +61,7 @@ fun AuthScreen(
     usageUpdatedAtEpochMs: Long?,
     isUsageLoading: Boolean,
     onBack: () -> Unit,
-    onAuthorize: (apiKey: String, apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
+    onPrepareDebugBaseUrl: (apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onAuthorized: () -> Unit,
     onLogout: () -> Unit,
     onRefreshUsage: () -> Unit,
@@ -104,7 +106,7 @@ fun AuthScreen(
                     .padding(padding)
                     .padding(24.dp),
                 isSubmitting = isUsageLoading,
-                onAuthorize = onAuthorize,
+                onPrepareDebugBaseUrl = onPrepareDebugBaseUrl,
                 onAuthorized = onAuthorized,
             )
         }
@@ -115,11 +117,11 @@ fun AuthScreen(
 private fun LoginContent(
     modifier: Modifier = Modifier,
     isSubmitting: Boolean,
-    onAuthorize: (apiKey: String, apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
+    onPrepareDebugBaseUrl: (apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onAuthorized: () -> Unit,
 ) {
+    val context = LocalContext.current
     val container = XvmBlitzApp.instance.container
-    var apiKey by remember { mutableStateOf("") }
     var apiBaseUrl by remember {
         mutableStateOf(
             if (BuildConfig.DEBUG) container.apiBaseUrl else ApiDefaults.BASE_URL,
@@ -129,18 +131,38 @@ private fun LoginContent(
     var loading by remember { mutableStateOf(false) }
     val busy = loading || isSubmitting
 
+    fun openOpenIdLogin() {
+        loading = true
+        error = null
+        onPrepareDebugBaseUrl(
+            if (BuildConfig.DEBUG) apiBaseUrl else null,
+        ) { result ->
+            result
+                .onSuccess {
+                    val loginUri = Uri.parse(container.openIdLoginUrl())
+                    context.startActivity(Intent(Intent.ACTION_VIEW, loginUri))
+                    loading = false
+                    onAuthorized()
+                }
+                .onFailure { exception ->
+                    loading = false
+                    error = exception.message ?: "Не удалось открыть авторизацию"
+                }
+        }
+    }
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Введите API ключ",
+            text = "Вход через Lesta OpenID",
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Ключ нужен для доступа к статистике и учёта квоты",
+            text = "Авторизация нужна для доступа к статистике, сессиям и учёта квоты",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
         )
@@ -164,43 +186,14 @@ private fun LoginContent(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = {
-                apiKey = it
-                error = null
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("API ключ") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            enabled = !busy,
-        )
         if (error != null) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(text = error!!, color = MaterialTheme.colorScheme.error)
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = {
-                loading = true
-                error = null
-                onAuthorize(
-                    apiKey,
-                    if (BuildConfig.DEBUG) apiBaseUrl else null,
-                ) { result ->
-                    result
-                        .onSuccess {
-                            loading = false
-                            onAuthorized()
-                        }
-                        .onFailure { exception ->
-                            loading = false
-                            error = exception.message ?: "Неверный ключ или ошибка сети"
-                        }
-                }
-            },
-            enabled = !busy && apiKey.isNotBlank(),
+            onClick = { openOpenIdLogin() },
+            enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -216,10 +209,10 @@ private fun LoginContent(
                         color = MaterialTheme.colorScheme.onPrimary,
                     )
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text("Вход…")
+                    Text("Открытие…")
                 }
             } else {
-                Text("Войти")
+                Text("Войти через Lesta OpenID")
             }
         }
     }
@@ -234,7 +227,7 @@ private fun AuthorizedQuotaContent(
     isUsageLoading: Boolean,
     onLogout: () -> Unit,
 ) {
-    var showChangeKeyConfirm by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier,
@@ -318,36 +311,34 @@ private fun AuthorizedQuotaContent(
         }
 
         AdaptiveButton(
-            text = "Сменить API ключ",
-            onClick = { showChangeKeyConfirm = true },
+            text = "Выйти",
+            onClick = { showLogoutConfirm = true },
             modifier = Modifier.fillMaxWidth(),
         )
     }
 
-    if (showChangeKeyConfirm) {
+    if (showLogoutConfirm) {
         AlertDialog(
-            onDismissRequest = { showChangeKeyConfirm = false },
-            title = { Text("Подтверждение смены API ключа") },
+            onDismissRequest = { showLogoutConfirm = false },
+            title = { Text("Подтверждение выхода") },
             text = {
-                Text(
-                    "Вы уверены, что хотите сменить API ключ? Текущий ключ будет утерян, если Вы предварительно не сохранили его.",
-                )
+                Text("Вы уверены, что хотите выйти из аккаунта Lesta OpenID?")
             },
             confirmButton = {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    OutlinedButton(onClick = { showChangeKeyConfirm = false }) {
+                    OutlinedButton(onClick = { showLogoutConfirm = false }) {
                         Text("Отмена")
                     }
                     Button(
                         onClick = {
-                            showChangeKeyConfirm = false
+                            showLogoutConfirm = false
                             onLogout()
                         },
                     ) {
-                        Text("Продолжить")
+                        Text("Выйти")
                     }
                 }
             },

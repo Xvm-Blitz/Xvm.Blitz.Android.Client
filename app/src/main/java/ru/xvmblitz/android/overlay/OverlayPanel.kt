@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.xvmblitz.android.data.api.XvmUsageStatus
 import ru.xvmblitz.android.domain.PlayerSlot
 
 @Composable
@@ -56,11 +57,13 @@ fun OverlayPanel(
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
     val contentPadding = OverlayPanelContentPaddingDp.dp
     val rowSpacing = with(density) { OverlayRowSpacingPx.toDp() }
+    val statusDotScale = minOf(rowScaleX, heightScale)
     val columnWidths = overlayColumnWidths(
         panelWidthDp = panelWidthDp,
         contentPaddingDp = OverlayPanelContentPaddingDp,
         fontSizeSp = fontSizeSp,
         rowScaleX = rowScaleX,
+        statusDotScale = statusDotScale,
     )
 
     Box(modifier = modifier.width(panelWidth)) {
@@ -239,7 +242,17 @@ private fun PlayerRow(
                 modifier = Modifier.width(columnWidths.nickname),
                 textAlign = TextAlign.End,
             )
+            XvmUsageDot(
+                player = player,
+                columnWidth = columnWidths.statusDot,
+                scale = minOf(scaleX, scaleY),
+            )
         } else {
+            XvmUsageDot(
+                player = player,
+                columnWidth = columnWidths.statusDot,
+                scale = minOf(scaleX, scaleY),
+            )
             CompactCell(
                 text = cells[0],
                 textStyle = textStyle.copy(textAlign = TextAlign.Start),
@@ -266,6 +279,35 @@ private fun PlayerRow(
                 textAlign = TextAlign.Center,
             )
         }
+    }
+}
+
+@Composable
+private fun XvmUsageDot(
+    player: PlayerSlot,
+    columnWidth: Dp,
+    scale: Float,
+) {
+    val color = if (player.isMissing) {
+        Color.Transparent
+    } else {
+        when (player.xvmUsage) {
+            XvmUsageStatus.Currently -> Color(0xFF4CAF50)
+            XvmUsageStatus.Previously -> Color(0xFFFFC107)
+            XvmUsageStatus.Never -> Color(0xFF9E9E9E)
+        }
+    }
+    val size = overlayStatusDotSizeDp(scale).dp
+    Box(
+        modifier = Modifier.width(columnWidth),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(50))
+                .background(color),
+        )
     }
 }
 

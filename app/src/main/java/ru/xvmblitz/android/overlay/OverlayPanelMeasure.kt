@@ -8,10 +8,13 @@ const val OverlayWinRateColumnChars = 6
 const val OverlayBattlesColumnChars = 4
 private const val OverlayNicknameColumnWeight = 2.4f
 private const val OverlayTankColumnWeight = 1.2f
-private const val OverlayColumnGapCount = 3
+private const val OverlayColumnGapCount = 4
 private const val OverlayDigitWidthFactor = 0.58f
+private const val OverlayStatusDotBaseDp = 7f
+private const val OverlayCellSpacingBaseDp = 8f
 
 data class OverlayColumnWidths(
+    val statusDot: Dp,
     val nickname: Dp,
     val tank: Dp,
     val battles: Dp,
@@ -19,27 +22,34 @@ data class OverlayColumnWidths(
     val cellSpacing: Dp,
 )
 
+fun overlayStatusDotSizeDp(scale: Float): Float =
+    OverlayStatusDotBaseDp * scale.coerceIn(0.85f, 1.4f)
+
 fun overlayColumnWidths(
     panelWidthDp: Float,
     contentPaddingDp: Float,
     fontSizeSp: Float,
     rowScaleX: Float,
+    statusDotScale: Float,
 ): OverlayColumnWidths {
     val digitWidthDp = fontSizeSp * OverlayDigitWidthFactor
     val winRateDp = digitWidthDp * OverlayWinRateColumnChars
     val battlesDp = digitWidthDp * OverlayBattlesColumnChars
-    val cellSpacingDp = 4f * rowScaleX
+    val statusDotDp = overlayStatusDotSizeDp(statusDotScale)
+    val cellSpacingDp = OverlayCellSpacingBaseDp * rowScaleX
     val contentWidthDp = (panelWidthDp - contentPaddingDp * 2f).coerceAtLeast(0f)
     val flexibleWidthDp = (
         contentWidthDp -
             winRateDp -
             battlesDp -
+            statusDotDp -
             cellSpacingDp * OverlayColumnGapCount
         ).coerceAtLeast(0f)
     val totalWeight = OverlayNicknameColumnWeight + OverlayTankColumnWeight
     val tankDp = flexibleWidthDp * (OverlayTankColumnWeight / totalWeight)
     val nicknameDp = (flexibleWidthDp - tankDp).coerceAtLeast(0f)
     return OverlayColumnWidths(
+        statusDot = statusDotDp.dp,
         nickname = nicknameDp.dp,
         tank = tankDp.dp,
         battles = battlesDp.dp,

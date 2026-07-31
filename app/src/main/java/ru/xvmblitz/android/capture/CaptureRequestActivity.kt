@@ -32,11 +32,10 @@ class CaptureRequestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val apiKey = XvmBlitzApp.instance.container.authRepository.getApiKeyOrNull()
-        if (apiKey.isNullOrBlank()) {
+        if (!XvmBlitzApp.instance.container.authRepository.isAuthorized) {
             OverlayService.showAccessDenied(
                 this,
-                AppAlertNotifier.DEFAULT_API_KEY_MESSAGE,
+                AppAlertNotifier.DEFAULT_AUTH_MESSAGE,
             )
             OverlayService.restoreAfterCapture(this)
             finish()

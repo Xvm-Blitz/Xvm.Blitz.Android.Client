@@ -107,7 +107,6 @@ private data class GuideStep(
 private enum class GuideIllustration {
     Auth,
     Session,
-    SessionSecretKey,
     OverlayPermission,
     GameFiles,
     Fab,
@@ -121,25 +120,17 @@ private enum class GuideIllustration {
 private val GuideSteps = listOf(
     GuideStep(
         title = "Авторизация",
-        description = "Откройте «Профиль» / «Войти» и введите API‑ключ. После входа можно смотреть квоту и сменить ключ.",
+        description = "Откройте «Профиль» / «Войти» и нажмите «Войти через Lesta OpenID». После входа можно смотреть квоту и выйти из аккаунта. Пока вы в аккаунте, приложение держит связь с сервером — другие игроки видят, что вы сейчас в XVM.",
         illustration = GuideIllustration.Auth,
     ),
     GuideStep(
         title = "Сессии боёв",
         description = """
-            В блоке «Сессии боёв» укажите никнейм в игре и секретный ключ, затем нажмите «Начать сессию».
+            В блоке «Сессии боёв» нажмите «Начать сессию» — ник и ключ не нужны, сессия привязана к вашему аккаунту Lesta.
             После каждого захвата статистики бой автоматически добавляется в сессию.
-            Для trial-ключа доступна только агрегированная статистика без списка боёв.
+            Для trial-доступа доступна только агрегированная статистика без списка боёв.
         """.trimIndent(),
         illustration = GuideIllustration.Session,
-    ),
-    GuideStep(
-        title = "Секретный ключ",
-        description = """
-            Секретный ключ нужен для восстановления истории сессий на другом устройстве.
-            Сохраните его в надёжном месте. Кнопка «Сгенерировать» создаёт новый ключ и копирует его в буфер обмена.
-        """.trimIndent(),
-        illustration = GuideIllustration.SessionSecretKey,
     ),
     GuideStep(
         title = "Поверх других приложений",
@@ -171,7 +162,7 @@ private val GuideSteps = listOf(
     ),
     GuideStep(
         title = "Панели оверлея",
-        description = "Появятся таблицы союзников и противников поверх игры. У противников колонки зеркальные. Длинный текст обрезается с «…».",
+        description = "Появятся таблицы союзников и противников поверх игры. У противников колонки зеркальные. Цветной кружок рядом с ником: слева у союзников, справа у противников. Зелёный — сейчас в XVM, жёлтый — пользовался раньше, серый — никогда. Длинный текст обрезается с «…».",
         illustration = GuideIllustration.Panels,
     ),
     GuideStep(
@@ -761,7 +752,6 @@ private fun GuideIllustrationBox(
         when (illustration) {
             GuideIllustration.Auth -> AuthIllustration()
             GuideIllustration.Session -> SessionIllustration()
-            GuideIllustration.SessionSecretKey -> SessionSecretKeyIllustration()
             GuideIllustration.OverlayPermission -> OverlayPermissionIllustration()
             GuideIllustration.GameFiles -> GameFilesIllustration()
             GuideIllustration.Fab -> FabIllustration()
@@ -900,30 +890,26 @@ private fun AuthIllustration() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Text(
+            text = "Lesta OpenID",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+        )
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.75f)
-                .height(44.dp)
-                .scale(pulse)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text(
-                text = "  ••••••••••••••••",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            )
-        }
-        Box(
-            modifier = Modifier
-                .width(140.dp)
+                .width(220.dp)
                 .height(40.dp)
                 .scale(pulse)
                 .clip(RoundedCornerShape(10.dp))
                 .background(MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center,
         ) {
-            Text("Войти", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)
+            Text(
+                "Войти через Lesta OpenID",
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+            )
         }
     }
 }
@@ -937,17 +923,6 @@ private fun SessionIllustration() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Никнейм", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(0.82f))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.82f)
-                .height(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text("  PlayerNick", modifier = Modifier.padding(start = 8.dp), fontSize = 12.sp)
-        }
         Text("Сессия", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(0.82f))
         Box(
             modifier = Modifier
@@ -968,44 +943,6 @@ private fun SessionIllustration() {
             contentAlignment = Alignment.Center,
         ) {
             Text("Начать сессию", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp)
-        }
-    }
-}
-
-@Composable
-private fun SessionSecretKeyIllustration() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 14.dp, end = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.82f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
-                .padding(12.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Секретный ключ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                Text(
-                    text = "a1b2c3d4e5f6…",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .width(140.dp)
-                .height(34.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Сгенерировать", fontSize = 11.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -1198,6 +1135,12 @@ private fun MiniPanel(modifier: Modifier = Modifier, mirrored: Boolean) {
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        val usageColors = listOf(
+            Color(0xFF4CAF50),
+            Color(0xFFFFC107),
+            Color(0xFF9E9E9E),
+            Color(0xFF4CAF50),
+        )
         repeat(4) { index ->
             val color = when (index % 3) {
                 0 -> Color(0xFFD68585)
@@ -1209,14 +1152,40 @@ private fun MiniPanel(modifier: Modifier = Modifier, mirrored: Boolean) {
                     .fillMaxWidth()
                     .background(Color.Transparent, RoundedCornerShape(4.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (mirrored) {
-                    Text("%.0f%%".format(48f + index * 6), color = color, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "%.0f%%".format(48f + index * 6),
+                        color = color,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.End,
+                    )
                     Text("Tank", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                } else {
                     Text("Player", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    Text("%.0f%%".format(48f + index * 6), color = color, style = MaterialTheme.typography.labelSmall)
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(usageColors[index]),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(usageColors[index]),
+                    )
+                    Text("Player", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "%.0f%%".format(48f + index * 6),
+                        color = color,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.End,
+                    )
                 }
             }
         }

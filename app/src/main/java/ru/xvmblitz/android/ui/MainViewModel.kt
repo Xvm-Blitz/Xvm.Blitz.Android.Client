@@ -3,9 +3,6 @@ package ru.xvmblitz.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -20,7 +17,7 @@ import kotlinx.coroutines.launch
 import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.AppContainer
-import ru.xvmblitz.android.data.api.ApiKeyType
+import ru.xvmblitz.android.data.api.AccessType
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
 import ru.xvmblitz.android.data.api.SessionAggregatedStatisticsDto
 import ru.xvmblitz.android.data.api.SessionBattleBriefDto
@@ -32,9 +29,9 @@ import ru.xvmblitz.android.ui.session.SessionBattleListItem
 import ru.xvmblitz.android.ui.session.SessionListItem
 import ru.xvmblitz.android.ui.session.SessionUiState
 import ru.xvmblitz.android.update.UpdateUiState
+import ru.xvmblitz.android.util.AppAlertNotifier
 import ru.xvmblitz.android.util.HttpErrorMessages
 import ru.xvmblitz.android.update.createAppUpdateFacade
-import java.security.SecureRandom
 
 data class MainUiState(
     val settings: AppSettings = AppSettings(),
@@ -64,18 +61,17 @@ class MainViewModel(
             container.settingsRepository.settings,
             container.battleStatisticsStore.state,
             usageState,
-            container.authRepository.apiKey,
+            container.authRepository.accessToken,
             sessionState,
-        ) { settings, battle, usage, apiKey, session ->
+        ) { settings, battle, usage, accessToken, session ->
             MainUiState(
                 settings = settings,
                 usage = usage,
                 battle = battle,
-                isAuthorized = !apiKey.isNullOrBlank(),
+                isAuthorized = !accessToken.isNullOrBlank(),
                 session = session.copy(
-                    nickname = session.nickname.ifBlank { settings.sessionNickname },
                     isSummaryOverlayVisible = settings.sessionSummaryOverlayVisible,
-                    isTrialStatistics = usage?.type == ApiKeyType.Trial,
+                    isTrialStatistics = usage?.type == AccessType.Trial,
                 ),
             )
         },
@@ -103,6 +99,9 @@ class MainViewModel(
         refreshUsage()
         updateFacade.startPeriodicChecks(viewModelScope)
         initializeSessions()
+        if (container.authRepository.isAuthorized) {
+            startPresence()
+        }
     }
 
     override fun onCleared() {
@@ -110,6 +109,7 @@ class MainViewModel(
         container.battleSessionRuntimeService.setListener(null)
         viewModelScope.launch {
             container.battleSessionRuntimeService.dispose()
+            container.presenceRuntimeService.dispose()
         }
         super.onCleared()
     }
@@ -134,16 +134,15 @@ class MainViewModel(
 
     fun refreshUsage() {
         viewModelScope.launch {
-            val apiKey = container.authRepository.getApiKeyOrNull()
-            if (apiKey.isNullOrBlank()) {
+            if (!container.authRepository.isAuthorized) {
                 usageState.value = null
-                usageError.value = "API ключ не задан"
+                usageError.value = AppAlertNotifier.DEFAULT_AUTH_MESSAGE
                 return@launch
             }
             usageLoading.value = true
             usageError.value = null
             try {
-                usageState.value = container.usageApi.getUsage(apiKey)
+                usageState.value = container.usageApi.getUsage()
                 usageUpdatedAtEpochMs.value = System.currentTimeMillis()
             } catch (exception: CancellationException) {
                 throw exception
@@ -155,8 +154,7 @@ class MainViewModel(
         }
     }
 
-    fun authorize(
-        apiKey: String,
+    fun prepareDebugBaseUrl(
         apiBaseUrl: String? = null,
         onResult: (Result<Unit>) -> Unit,
     ) {
@@ -171,35 +169,42 @@ class MainViewModel(
                     container.setApiBaseUrl(normalized)
                     container.settingsRepository.setApiBaseUrl(normalized)
                     reconnectActiveSession()
-                }
-
-                val trimmed = apiKey.trim()
-                if (trimmed.isEmpty()) {
-                    onResult(Result.failure(IllegalArgumentException("Ключ не может быть пустым")))
-                    return@launch
-                }
-
-                usageLoading.value = true
-                usageError.value = null
-                if (!container.authRepository.saveApiKey(trimmed)) {
-                    onResult(Result.failure(IllegalArgumentException("Ключ не может быть пустым")))
-                    return@launch
+                    if (container.authRepository.isAuthorized) {
+                        container.presenceRuntimeService.ensureConnected()
+                    }
                 }
                 onResult(Result.success(Unit))
-                val usage = container.usageApi.getUsage(trimmed)
-                usageState.value = usage
-                usageUpdatedAtEpochMs.value = System.currentTimeMillis()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
-                if (container.authRepository.isAuthorized) {
-                    usageState.value = null
-                    usageUpdatedAtEpochMs.value = null
-                    usageError.value = exception.message ?: "Не удалось получить квоту"
-                    onResult(Result.success(Unit))
-                } else {
-                    onResult(Result.failure(exception))
-                }
+                onResult(Result.failure(exception))
+            }
+        }
+    }
+
+    fun handleOpenIdCallback(
+        accessToken: String,
+        refreshToken: String,
+        lestaExpiresAt: String?,
+    ) {
+        viewModelScope.launch {
+            if (!container.authRepository.saveTokens(accessToken, refreshToken, lestaExpiresAt)) {
+                usageError.value = "Не удалось сохранить токены авторизации"
+                return@launch
+            }
+            startPresence()
+            usageLoading.value = true
+            usageError.value = null
+            try {
+                usageState.value = container.usageApi.getUsage()
+                usageUpdatedAtEpochMs.value = System.currentTimeMillis()
+                loadSessionHistory(page = 1, showBusy = false)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                usageState.value = null
+                usageUpdatedAtEpochMs.value = null
+                usageError.value = exception.message ?: "Не удалось получить квоту"
             } finally {
                 usageLoading.value = false
             }
@@ -260,36 +265,6 @@ class MainViewModel(
         }
     }
 
-    fun setSessionNickname(nickname: String) {
-        sessionState.value = sessionState.value.copy(nickname = nickname)
-        viewModelScope.launch {
-            container.settingsRepository.setSessionNickname(nickname)
-        }
-    }
-
-    fun setSessionSecretKey(secretKey: String) {
-        sessionState.value = sessionState.value.copy(secretKey = secretKey)
-    }
-
-    fun generateSessionSecretKey() {
-        val bytes = ByteArray(16)
-        SecureRandom().nextBytes(bytes)
-        val key = bytes.joinToString("") { byte -> "%02x".format(byte) }
-        sessionState.value = sessionState.value.copy(
-            secretKey = key,
-            isSecretKeyCopiedHighlight = true,
-        )
-        val clipboard = container.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Секретный ключ сессии", key))
-        setSessionStatus("Секретный ключ сгенерирован и скопирован в буфер обмена", isError = false)
-        viewModelScope.launch {
-            delay(3_000)
-            if (sessionState.value.isSecretKeyCopiedHighlight) {
-                sessionState.value = sessionState.value.copy(isSecretKeyCopiedHighlight = false)
-            }
-        }
-    }
-
     fun selectSession(session: SessionListItem?) {
         viewModelScope.launch {
             sessionState.value = sessionState.value.copy(selectedSession = session)
@@ -304,17 +279,15 @@ class MainViewModel(
             if (sessionState.value.isBusy) {
                 return@launch
             }
-            val nickname = sessionState.value.nickname.trim()
-            val secretKey = sessionState.value.secretKey.trim()
-            if (nickname.isEmpty() || secretKey.isEmpty()) {
-                setSessionStatus("Укажите никнейм и секретный ключ", isError = true)
+            if (!container.authRepository.isAuthorized) {
+                setSessionStatus(AppAlertNotifier.DEFAULT_AUTH_MESSAGE, isError = true)
                 return@launch
             }
             sessionState.value = sessionState.value.copy(isBusy = true)
             setSessionStatus("Создание сессии…", isError = false)
             try {
-                val result = container.sessionsRepository.create(nickname, secretKey)
-                val sessionId = result.getOrElse { exception ->
+                val result = container.sessionsRepository.create()
+                result.getOrElse { exception ->
                     handleSessionError(
                         exception = exception,
                         defaultMessage = "Не удалось создать сессию",
@@ -322,7 +295,6 @@ class MainViewModel(
                     )
                     return@launch
                 }
-                persistSessionCredentials(nickname, secretKey)
                 loadSessionHistory(page = 1, showBusy = false)
                 setSessionStatus("Сессия создана", isError = false)
             } finally {
@@ -347,15 +319,14 @@ class MainViewModel(
                 setSessionStatus("Выберите активную сессию для завершения", isError = true)
                 return@launch
             }
-            val secretKey = sessionState.value.secretKey.trim()
-            if (secretKey.isEmpty()) {
-                setSessionStatus("Укажите секретный ключ", isError = true)
+            if (!container.authRepository.isAuthorized) {
+                setSessionStatus(AppAlertNotifier.DEFAULT_AUTH_MESSAGE, isError = true)
                 return@launch
             }
             sessionState.value = sessionState.value.copy(isBusy = true)
             setSessionStatus("Завершение сессии…", isError = false)
             try {
-                val result = container.sessionsRepository.end(selected.id, secretKey)
+                val result = container.sessionsRepository.end(selected.id)
                 result.getOrElse { exception ->
                     handleSessionError(
                         exception = exception,
@@ -420,35 +391,37 @@ class MainViewModel(
     }
 
     fun logout() {
-        container.authRepository.logout()
-        usageState.value = null
-        usageError.value = null
-        usageUpdatedAtEpochMs.value = null
-        container.battleStatisticsStore.clear()
+        viewModelScope.launch {
+            runCatching { container.openIdApi.logout() }
+            container.presenceRuntimeService.stop()
+            container.battleSessionRuntimeService.setActiveSession(null, null)
+            container.authRepository.clear()
+            usageState.value = null
+            usageError.value = null
+            usageUpdatedAtEpochMs.value = null
+            container.battleStatisticsStore.clear()
+            sessionState.value = SessionUiState(
+                isSummaryOverlayVisible = sessionState.value.isSummaryOverlayVisible,
+            )
+        }
+    }
+
+    private fun startPresence() {
+        viewModelScope.launch {
+            container.presenceRuntimeService.start()
+        }
     }
 
     private fun initializeSessions() {
         viewModelScope.launch {
             try {
-                val settings = container.settingsRepository.current()
-                val secretKey = container.sessionsRepository.loadSecretKey().orEmpty()
-                sessionState.value = sessionState.value.copy(
-                    nickname = settings.sessionNickname,
-                    secretKey = secretKey,
-                )
-                if (settings.sessionNickname.isBlank() || secretKey.isBlank()) {
+                if (!container.authRepository.isAuthorized) {
                     return@launch
                 }
                 loadSessionHistory(page = 1, showBusy = false)
             } catch (_: Exception) {
             }
         }
-    }
-
-    private suspend fun persistSessionCredentials(nickname: String, secretKey: String) {
-        sessionState.value = sessionState.value.copy(nickname = nickname, secretKey = secretKey)
-        container.settingsRepository.setSessionNickname(nickname)
-        container.sessionsRepository.saveSecretKey(secretKey)
     }
 
     private suspend fun loadSessionHistory(page: Int, showBusy: Boolean = true) {
@@ -458,10 +431,8 @@ class MainViewModel(
         if (showBusy && sessionState.value.isBusy) {
             return
         }
-        val nickname = sessionState.value.nickname.trim()
-        val secretKey = sessionState.value.secretKey.trim()
-        if (nickname.isEmpty() || secretKey.isEmpty()) {
-            setSessionStatus("Укажите никнейм и секретный ключ", isError = true)
+        if (!container.authRepository.isAuthorized) {
+            setSessionStatus(AppAlertNotifier.DEFAULT_AUTH_MESSAGE, isError = true)
             return
         }
         if (showBusy) {
@@ -470,8 +441,6 @@ class MainViewModel(
         }
         try {
             val result = container.sessionsRepository.restore(
-                nickname = nickname,
-                secretKey = secretKey,
                 page = page,
                 pageSize = SessionUiState.SESSION_HISTORY_PAGE_SIZE,
             )
@@ -483,7 +452,6 @@ class MainViewModel(
                 )
                 return
             }
-            persistSessionCredentials(nickname, secretKey)
             val settings = container.settingsRepository.current()
             val previouslySelectedId = sessionState.value.selectedSession?.id ?: settings.selectedSessionId
             val sessions = payload.sessions.map(SessionListItem::fromDto)
@@ -536,11 +504,10 @@ class MainViewModel(
         sessionState.value = sessionState.value.copy(isBattlesLoading = true)
         try {
             val usage = try {
-                val apiKey = container.authRepository.getApiKeyOrNull()
-                if (apiKey.isNullOrBlank()) {
-                    error("Необходимо настроить API ключ")
+                if (!container.authRepository.isAuthorized) {
+                    error(AppAlertNotifier.DEFAULT_AUTH_MESSAGE)
                 }
-                container.usageApi.getUsage(apiKey).also { usageState.value = it }
+                container.usageApi.getUsage().also { usageState.value = it }
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
@@ -561,7 +528,7 @@ class MainViewModel(
 
             val targetPage = page.coerceAtLeast(1)
 
-            if (usage.type == ApiKeyType.Trial) {
+            if (usage.type == AccessType.Trial) {
                 sessionState.value = sessionState.value.copy(
                     battles = emptyList(),
                     battlesPage = 1,
@@ -725,13 +692,17 @@ class MainViewModel(
         viewModelScope.launch {
             updateActiveSessionConnection()
             container.battleSessionRuntimeService.ensureConnected()
+            if (container.authRepository.isAuthorized) {
+                container.presenceRuntimeService.ensureConnected()
+            }
         }
     }
 
     private suspend fun updateActiveSessionConnection() {
         val selected = sessionState.value.selectedSession
-        if (selected?.isActive == true) {
-            container.battleSessionRuntimeService.setActiveSession(selected.id, sessionState.value.nickname)
+        val playerId = container.authRepository.getLestaAccountId()
+        if (selected?.isActive == true && playerId != null) {
+            container.battleSessionRuntimeService.setActiveSession(selected.id, playerId)
             return
         }
         container.battleSessionRuntimeService.setActiveSession(null, null)

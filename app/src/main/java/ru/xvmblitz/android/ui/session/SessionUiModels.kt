@@ -64,8 +64,6 @@ data class SessionBattleListItem(
 }
 
 data class SessionUiState(
-    val nickname: String = "",
-    val secretKey: String = "",
     val availableSessions: List<SessionListItem> = emptyList(),
     val selectedSession: SessionListItem? = null,
     val battles: List<SessionBattleListItem> = emptyList(),
@@ -84,7 +82,6 @@ data class SessionUiState(
     val averageFragsSummary: String = "",
     val isSummaryOverlayVisible: Boolean = false,
     val isTrialStatistics: Boolean = false,
-    val isSecretKeyCopiedHighlight: Boolean = false,
 ) {
     val hasSelectedSession: Boolean
         get() = selectedSession != null

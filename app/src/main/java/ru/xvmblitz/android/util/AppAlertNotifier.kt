@@ -13,7 +13,7 @@ object AppAlertNotifier {
     private const val CHANNEL_ID = "xvm_alerts"
     private const val NOTIFICATION_ID = 2001
 
-    fun showApiKeyRequired(context: Context, message: String = DEFAULT_API_KEY_MESSAGE) {
+    fun showAuthRequired(context: Context, message: String = DEFAULT_AUTH_MESSAGE) {
         ensureChannel(context)
         val openAppIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -48,13 +48,14 @@ object AppAlertNotifier {
         manager.createNotificationChannel(channel)
     }
 
-    const val DEFAULT_API_KEY_MESSAGE = "Необходимо настроить API ключ"
-    const val QUOTA_EXHAUSTED_MESSAGE = "Квота исчерпана. Необходимо настроить API ключ"
-    const val REQUEST_DENIED_MESSAGE = "Запрос отклонён"
+    const val DEFAULT_AUTH_MESSAGE = "Необходимо войти через Lesta OpenID"
+    const val QUOTA_EXHAUSTED_MESSAGE = "Квота запросов превышена. Дождитесь обновления периода или войдите снова через Lesta OpenID"
+    const val REQUEST_DENIED_MESSAGE = "Не удалось выполнить запрос"
 
     fun fallbackMessageForStatus(statusCode: Int): String {
         return when (statusCode) {
-            401, 403 -> DEFAULT_API_KEY_MESSAGE
+            401, 403 -> DEFAULT_AUTH_MESSAGE
+            400 -> "Некорректный запрос"
             402, 429 -> QUOTA_EXHAUSTED_MESSAGE
             else -> REQUEST_DENIED_MESSAGE
         }

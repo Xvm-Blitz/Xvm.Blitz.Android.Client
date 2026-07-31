@@ -11,115 +11,71 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.xvmblitz.android.BuildConfig
-import ru.xvmblitz.android.data.api.BattleStatisticsDto
-import ru.xvmblitz.android.data.api.SessionBattleBriefDto
-import ru.xvmblitz.android.data.api.SessionBattleCompletedHubDto
-import ru.xvmblitz.android.data.api.SessionEndedHubDto
 
-interface BattleSessionRuntimeListener {
-    fun onBattleStarted(battle: SessionBattleBriefDto)
-    fun onBattleCompleted(notification: SessionBattleCompletedHubDto)
-    fun onSessionEnded(sessionId: String)
-}
-
-class BattleSessionRuntimeService(
+class PresenceRuntimeService(
     private val apiBaseUrlProvider: () -> String,
     private val accessTokenProvider: () -> String?,
 ) {
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var connection: HubConnection? = null
+    private var heartbeatJob: Job? = null
     private var connectGeneration = 0
-    private var activeSessionId: String? = null
-    private var playerId: Long? = null
-    private var listener: BattleSessionRuntimeListener? = null
+    private var enabled = false
 
-    fun setListener(value: BattleSessionRuntimeListener?) {
-        listener = value
+    suspend fun start() {
+        mutex.withLock {
+            enabled = true
+            ensureConnectedInternal()
+        }
     }
 
-    suspend fun setActiveSession(sessionId: String?, playerId: Long?) {
-        val normalizedPlayerId = playerId?.takeIf { it > 0L }
+    suspend fun stop() {
         mutex.withLock {
-            if (
-                activeSessionId == sessionId &&
-                this.playerId == normalizedPlayerId &&
-                isConnectionActive()
-            ) {
-                return
-            }
-
+            enabled = false
             disconnectInternal()
-            activeSessionId = sessionId
-            this.playerId = normalizedPlayerId
-
-            if (sessionId.isNullOrBlank() || normalizedPlayerId == null) {
-                return
-            }
-
-            connectInternal(sessionId)
         }
     }
 
     suspend fun ensureConnected() {
         mutex.withLock {
-            ensureConnectedInternal()
-        }
-    }
-
-    fun notifyBattleStarted(battle: BattleStatisticsDto) {
-        scope.launch {
-            mutex.withLock {
-                val sessionId = activeSessionId
-                val accountId = playerId
-                if (sessionId.isNullOrBlank() || accountId == null) {
-                    return@withLock
-                }
-                ensureConnectedInternal()
-                val hub = connection
-                if (hub == null || hub.connectionState != HubConnectionState.CONNECTED) {
-                    return@withLock
-                }
-                val tankName = SessionBattlePlayerResolver.resolveTankName(accountId, battle) ?: return@withLock
-                withContext(Dispatchers.IO) {
-                    hub.send("StartBattle", sessionId, tankName)
-                }
+            if (!enabled) {
+                return
             }
+            ensureConnectedInternal()
         }
     }
 
     suspend fun dispose() {
         mutex.withLock {
+            enabled = false
             disconnectInternal()
-            activeSessionId = null
-            playerId = null
         }
     }
 
     private suspend fun ensureConnectedInternal() {
-        val sessionId = activeSessionId
-        val accountId = playerId
-        if (sessionId.isNullOrBlank() || accountId == null) {
+        if (!enabled) {
             return
         }
         if (connection?.connectionState == HubConnectionState.CONNECTED) {
             return
         }
         disconnectInternal()
-        activeSessionId = sessionId
-        playerId = accountId
-        connectInternal(sessionId)
+        connectInternal()
     }
 
-    private suspend fun connectInternal(sessionId: String) {
+    private suspend fun connectInternal() {
         val generation = connectGeneration
-        val hubUrl = buildHubUrl(sessionId) ?: return
+        val hubUrl = buildHubUrl() ?: return
         val builder = HubConnectionBuilder.create(hubUrl)
         if (BuildConfig.DEBUG && shouldTrustAllCertificates(hubUrl)) {
             builder.setHttpClientBuilderCallback { clientBuilder ->
@@ -128,31 +84,11 @@ class BattleSessionRuntimeService(
             }
         }
         val hub = builder.build()
-        hub.on(
-            "battleStarted",
-            { battle: SessionBattleBriefDto ->
-                listener?.onBattleStarted(battle)
-            },
-            SessionBattleBriefDto::class.java,
-        )
-        hub.on(
-            "battleCompleted",
-            { notification: SessionBattleCompletedHubDto ->
-                listener?.onBattleCompleted(notification)
-            },
-            SessionBattleCompletedHubDto::class.java,
-        )
-        hub.on(
-            "sessionEnded",
-            { notification: SessionEndedHubDto ->
-                listener?.onSessionEnded(notification.sessionId)
-            },
-            SessionEndedHubDto::class.java,
-        )
         hub.onClosed {
             scope.launch {
                 mutex.withLock {
                     if (connection === hub) {
+                        stopHeartbeat()
                         connection = null
                     }
                 }
@@ -171,10 +107,31 @@ class BattleSessionRuntimeService(
             return
         }
         connection = hub
+        startHeartbeat(hub)
+    }
+
+    private fun startHeartbeat(hub: HubConnection) {
+        stopHeartbeat()
+        heartbeatJob = scope.launch {
+            while (isActive) {
+                delay(HeartbeatIntervalMs)
+                val activeHub = mutex.withLock { connection }
+                if (activeHub !== hub || hub.connectionState != HubConnectionState.CONNECTED) {
+                    break
+                }
+                runCatching { hub.send("Heartbeat") }
+            }
+        }
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
     }
 
     private suspend fun disconnectInternal() {
         connectGeneration++
+        stopHeartbeat()
         val hub = connection ?: return
         connection = null
         withContext(Dispatchers.IO) {
@@ -182,19 +139,10 @@ class BattleSessionRuntimeService(
         }
     }
 
-    private fun isConnectionActive(): Boolean {
-        return when (connection?.connectionState) {
-            HubConnectionState.CONNECTED,
-            HubConnectionState.CONNECTING,
-            -> true
-            else -> false
-        }
-    }
-
-    private fun buildHubUrl(sessionId: String): String? {
+    private fun buildHubUrl(): String? {
         val token = accessTokenProvider()?.takeIf { it.isNotBlank() } ?: return null
         val base = apiBaseUrlProvider().trimEnd('/')
-        return "$base/v1/hubs/sessions?sessionId=$sessionId&access_token=${Uri.encode(token)}"
+        return "$base/v1/hubs/presence?access_token=${Uri.encode(token)}"
     }
 
     private fun shouldTrustAllCertificates(url: String): Boolean {
@@ -213,5 +161,9 @@ class BattleSessionRuntimeService(
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
         return sslContext.socketFactory to trustManager
+    }
+
+    private companion object {
+        const val HeartbeatIntervalMs = 30_000L
     }
 }

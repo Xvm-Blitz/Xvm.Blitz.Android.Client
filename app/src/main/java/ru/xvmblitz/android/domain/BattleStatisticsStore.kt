@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import ru.xvmblitz.android.data.api.BattlePlayerStatisticsDto
 import ru.xvmblitz.android.data.api.BattleStatisticsDto
+import ru.xvmblitz.android.data.api.XvmUsageStatus
 
 data class PlayerSlot(
     val tableNumber: Int,
@@ -14,6 +15,7 @@ data class PlayerSlot(
     val tank: String? = null,
     val numberOfBattles: Int? = null,
     val winRate: Double? = null,
+    val xvmUsage: XvmUsageStatus = XvmUsageStatus.Never,
 )
 
 data class BattleUiState(
@@ -54,6 +56,7 @@ class BattleStatisticsStore {
                     tank = player.tank ?: "неизвестный танк",
                     numberOfBattles = player.numberOfBattles,
                     winRate = player.winRatePercents,
+                    xvmUsage = player.xvmUsage,
                 )
             }
         }
@@ -71,6 +74,7 @@ class BattleStatisticsStore {
                 tank = "Т-54 первый образец великолепный",
                 numberOfBattles = 0,
                 winRate = 52.45,
+                xvmUsage = XvmUsageStatus.Currently,
             ),
             PlayerSlot(
                 tableNumber = 1,
@@ -79,6 +83,7 @@ class BattleStatisticsStore {
                 tank = "КВ-1",
                 numberOfBattles = 999,
                 winRate = 45.23,
+                xvmUsage = XvmUsageStatus.Previously,
             ),
             PlayerSlot(
                 tableNumber = 2,
@@ -96,6 +101,7 @@ class BattleStatisticsStore {
                 tank = "ИС-7",
                 numberOfBattles = 1001,
                 winRate = 65.92,
+                xvmUsage = XvmUsageStatus.Currently,
             ),
             PlayerSlot(
                 tableNumber = 4,
@@ -113,6 +119,7 @@ class BattleStatisticsStore {
                 tank = "T62A",
                 numberOfBattles = 2134,
                 winRate = 58.45,
+                xvmUsage = XvmUsageStatus.Previously,
             ),
             PlayerSlot(
                 tableNumber = 6,
@@ -133,6 +140,7 @@ class BattleStatisticsStore {
                 tank = "Maus with long description",
                 numberOfBattles = 47000,
                 winRate = 51.23,
+                xvmUsage = XvmUsageStatus.Currently,
             ),
             PlayerSlot(
                 tableNumber = 1,
@@ -150,6 +158,7 @@ class BattleStatisticsStore {
                 tank = "IS-4",
                 numberOfBattles = 17000,
                 winRate = 54.21,
+                xvmUsage = XvmUsageStatus.Previously,
             ),
             PlayerSlot(
                 tableNumber = 3,

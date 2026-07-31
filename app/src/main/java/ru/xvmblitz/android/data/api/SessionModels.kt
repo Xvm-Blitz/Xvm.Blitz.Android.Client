@@ -4,19 +4,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class CreateSessionRequestDto(
-    @SerialName("nickname") val nickname: String,
-    @SerialName("secretKey") val secretKey: String,
-)
-
-@Serializable
 data class CreateSessionResponseDto(
     @SerialName("id") val id: String,
-)
-
-@Serializable
-data class EndSessionRequestDto(
-    @SerialName("secretKey") val secretKey: String,
 )
 
 @Serializable

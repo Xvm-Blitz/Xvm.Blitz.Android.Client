@@ -50,9 +50,6 @@ fun MainScreen(
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
     onResetOverlayPositions: () -> Unit,
-    onSessionNicknameChange: (String) -> Unit,
-    onSessionSecretKeyChange: (String) -> Unit,
-    onGenerateSessionSecretKey: () -> Unit,
     onSelectSession: (ru.xvmblitz.android.ui.session.SessionListItem?) -> Unit,
     onStartSession: () -> Unit,
     onRestoreSessions: () -> Unit,
@@ -137,9 +134,6 @@ fun MainScreen(
 
         SessionSection(
             session = state.session,
-            onNicknameChange = onSessionNicknameChange,
-            onSecretKeyChange = onSessionSecretKeyChange,
-            onGenerateSecretKey = onGenerateSessionSecretKey,
             onSelectSession = onSelectSession,
             onStartSession = onStartSession,
             onRestoreSessions = onRestoreSessions,

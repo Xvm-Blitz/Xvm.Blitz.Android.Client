@@ -101,12 +101,36 @@ class MainActivity : ComponentActivity() {
                     }
 
                     LaunchedEffect(incomingIntent) {
-                        val openAuth = incomingIntent?.getBooleanExtra(EXTRA_OPEN_AUTH, false) == true
+                        val intent = incomingIntent ?: return@LaunchedEffect
+                        val data = intent.data
+                        if (
+                            data != null &&
+                            data.scheme == "xvmblitz" &&
+                            data.host == "auth" &&
+                            (data.path == "/callback" || data.path.isNullOrEmpty())
+                        ) {
+                            val accessToken = data.getQueryParameter("access_token")
+                            val refreshToken = data.getQueryParameter("refresh_token")
+                            val lestaExpiresAt = data.getQueryParameter("lesta_expires_at")
+                            if (!accessToken.isNullOrBlank() && !refreshToken.isNullOrBlank()) {
+                                mainViewModel.handleOpenIdCallback(
+                                    accessToken = accessToken,
+                                    refreshToken = refreshToken,
+                                    lestaExpiresAt = lestaExpiresAt,
+                                )
+                                navController.navigate(Routes.Auth) {
+                                    launchSingleTop = true
+                                }
+                            }
+                            intent.data = null
+                        }
+
+                        val openAuth = intent.getBooleanExtra(EXTRA_OPEN_AUTH, false)
                         if (openAuth) {
                             navController.navigate(Routes.Auth) {
                                 launchSingleTop = true
                             }
-                            incomingIntent?.removeExtra(EXTRA_OPEN_AUTH)
+                            intent.removeExtra(EXTRA_OPEN_AUTH)
                         }
                     }
 
@@ -130,9 +154,6 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOverlayVisibleChange = mainViewModel::setOverlayVisible,
                                 onResetOverlayPositions = mainViewModel::resetOverlayPositions,
-                                onSessionNicknameChange = mainViewModel::setSessionNickname,
-                                onSessionSecretKeyChange = mainViewModel::setSessionSecretKey,
-                                onGenerateSessionSecretKey = mainViewModel::generateSessionSecretKey,
                                 onSelectSession = mainViewModel::selectSession,
                                 onStartSession = mainViewModel::startSession,
                                 onRestoreSessions = mainViewModel::restoreSessions,
@@ -189,7 +210,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = {
                                     navController.popBackStack()
                                 },
-                                onAuthorize = mainViewModel::authorize,
+                                onPrepareDebugBaseUrl = mainViewModel::prepareDebugBaseUrl,
                                 onAuthorized = {
                                     ensureOverlayRunning()
                                 },

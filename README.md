@@ -6,10 +6,11 @@ Android-порт [Xvm.Blitz.Windows.Client](https://github.com/Xvm-Blitz/Xvm.Bli
 
 - Kotlin + Jetpack Compose
 - Retrofit + kotlinx.serialization
-- EncryptedSharedPreferences (API key)
+- EncryptedSharedPreferences (OpenID-токены)
 - DataStore (настройки overlay)
 - MediaProjection (ручной захват экрана)
 - `TYPE_APPLICATION_OVERLAY` (статистика поверх игры)
+- SignalR (сессии и presence)
 
 ## Сборка
 
@@ -42,12 +43,12 @@ APK: `app/build/outputs/apk/release/app-release.apk` (при локальной 
 ## Ручной checklist
 
 1. Установить debug APK, выдать разрешение «Поверх других окон» и уведомления.
-2. Ввести валидный API-ключ → квота отображается.
+2. Войти через Lesta OpenID → квота отображается.
 3. Открыть экран загрузки боя в Tanks Blitz (или любой тестовый скрин таблицы).
-4. В XVM нажать «Считать статистику» → разрешить захват экрана.
-5. Убедиться, что появились overlay-панели союзников/противников.
+4. В XVM нажать «Статистика» → разрешить захват экрана.
+5. Убедиться, что появились overlay-панели союзников/противников с цветными кружками статуса XVM.
 6. Включить «Режим настройки» и перетащить панели; позиции сохраняются после перезапуска.
 7. Скрыть overlay из notification action / переключателя в приложении.
-8. «Выйти» очищает ключ и останавливает overlay.
+8. «Выйти» очищает сессию OpenID и останавливает overlay.
 
 API base URL: `https://xvmblitz.ru/api/`

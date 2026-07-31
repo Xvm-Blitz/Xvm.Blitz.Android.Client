@@ -29,6 +29,7 @@ import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.overlay.OverlayService
 import ru.xvmblitz.android.util.AppAlertNotifier
+import ru.xvmblitz.android.util.CaptureAccessGuard
 import ru.xvmblitz.android.util.HttpErrorMessages
 
 class CaptureForegroundService : Service() {
@@ -54,9 +55,8 @@ class CaptureForegroundService : Service() {
 
         scope.launch {
             val container = XvmBlitzApp.instance.container
-            val apiKey = container.authRepository.getApiKeyOrNull()
-            if (apiKey.isNullOrBlank()) {
-                notifyAccessDenied(AppAlertNotifier.DEFAULT_API_KEY_MESSAGE)
+            if (!container.authRepository.isAuthorized) {
+                notifyAccessDenied(AppAlertNotifier.DEFAULT_AUTH_MESSAGE)
                 stopSelf()
                 return@launch
             }
@@ -85,7 +85,7 @@ class CaptureForegroundService : Service() {
                                 body,
                             )
                             val battle = withTimeout(STATISTICS_REQUEST_TIMEOUT) {
-                                container.statisticsApi.getBattleStatistics(apiKey, part)
+                                container.statisticsApi.getBattleStatistics(part)
                             }
                             container.battleStatisticsStore.publish(battle)
                             container.battleSessionRuntimeService.notifyBattleStarted(battle)
@@ -101,11 +101,9 @@ class CaptureForegroundService : Service() {
                             throw exception
                         } catch (exception: Exception) {
                             val httpException = exception as? HttpException
-                            if (httpException?.code() == 429) {
-                                notifyAccessDenied(
-                                    HttpErrorMessages.fromHttpException(httpException)
-                                        ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
-                                )
+                            val denied = httpException?.let(CaptureAccessGuard::classifyError)
+                            if (denied != null) {
+                                notifyAccessDenied(denied.message)
                                 return@launch
                             }
                             lastErrorMessage = httpException
@@ -122,11 +120,9 @@ class CaptureForegroundService : Service() {
                 throw exception
             } catch (exception: Exception) {
                 val httpException = exception as? HttpException
-                if (httpException?.code() == 429) {
-                    notifyAccessDenied(
-                        HttpErrorMessages.fromHttpException(httpException)
-                            ?: AppAlertNotifier.QUOTA_EXHAUSTED_MESSAGE,
-                    )
+                val denied = httpException?.let(CaptureAccessGuard::classifyError)
+                if (denied != null) {
+                    notifyAccessDenied(denied.message)
                 } else {
                     notifyAccessDenied(
                         httpException?.let(HttpErrorMessages::fromHttpException)

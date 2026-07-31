@@ -3,16 +3,12 @@ package ru.xvmblitz.android.domain
 import ru.xvmblitz.android.data.api.BattleStatisticsDto
 
 object SessionBattlePlayerResolver {
-    fun resolveTankName(sessionNickname: String, battle: BattleStatisticsDto): String? {
-        if (sessionNickname.isBlank()) {
+    fun resolveTankName(playerId: Long, battle: BattleStatisticsDto): String? {
+        if (playerId <= 0L) {
             return null
         }
-        val player = battle.allies.firstOrNull { ally ->
-            nicknamesMatch(sessionNickname, ally.nickname)
-        }
+        val player = battle.allies.firstOrNull { ally -> ally.id == playerId }
+            ?: battle.enemies.firstOrNull { enemy -> enemy.id == playerId }
         return player?.tank?.trim()?.takeIf { it.isNotEmpty() }
     }
-
-    private fun nicknamesMatch(sessionNickname: String, playerNickname: String?): Boolean =
-        sessionNickname.trim().equals(playerNickname?.trim().orEmpty(), ignoreCase = true)
 }
