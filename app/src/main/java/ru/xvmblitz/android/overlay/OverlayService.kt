@@ -152,7 +152,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     ?: AppAlertNotifier.DEFAULT_AUTH_MESSAGE
                 signalFabAccessDenied(message)
             }
-            ACTION_STOP -> stopSelf()
         }
         return START_STICKY
     }
@@ -1110,12 +1109,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             Intent(this, OverlayService::class.java).setAction(ACTION_TOGGLE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getService(
-            this,
-            2,
-            Intent(this, OverlayService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle(getString(R.string.overlay_notification_title))
@@ -1123,7 +1116,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentIntent(openApp)
             .addAction(0, getString(R.string.action_toggle_overlay), toggle)
-            .addAction(0, getString(R.string.action_stop_overlay), stop)
             .setOngoing(true)
             .build()
 
@@ -1165,7 +1157,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         const val ACTION_HIDE_FOR_CAPTURE = "ru.xvmblitz.android.overlay.HIDE_FOR_CAPTURE"
         const val ACTION_RESTORE_AFTER_CAPTURE = "ru.xvmblitz.android.overlay.RESTORE_AFTER_CAPTURE"
         const val ACTION_ACCESS_DENIED = "ru.xvmblitz.android.overlay.ACCESS_DENIED"
-        const val ACTION_STOP = "ru.xvmblitz.android.overlay.STOP"
         const val EXTRA_ACCESS_DENIED_MESSAGE = "access_denied_message"
 
         fun start(context: Context) {
