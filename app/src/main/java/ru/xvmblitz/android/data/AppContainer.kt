@@ -6,9 +6,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import okhttp3.Authenticator
 import okhttp3.ConnectionSpec
 import okhttp3.MediaType.Companion.toMediaType
@@ -79,8 +76,12 @@ class AppContainer(context: Context) {
         )
         .addInterceptor { chain ->
             val original = chain.request()
-            val token = authRepository.getAccessToken()
-            val request = if (!token.isNullOrBlank() && !isOpenIdRefreshRequest(original)) {
+            val token = if (!isOpenIdRefreshRequest(original)) {
+                getValidAccessToken()
+            } else {
+                null
+            }
+            val request = if (!token.isNullOrBlank()) {
                 original.newBuilder()
                     .header("Authorization", "Bearer $token")
                     .build()
@@ -187,24 +188,9 @@ class AppContainer(context: Context) {
     }
 
     private fun isAccessTokenExpiringSoon(accessToken: String): Boolean {
-        val exp = runCatching {
-            val parts = accessToken.split('.')
-            if (parts.size < 2) {
-                return true
-            }
-            var payload = parts[1]
-            val padding = (4 - payload.length % 4) % 4
-            if (padding > 0) {
-                payload += "=".repeat(padding)
-            }
-            val jsonPayload = String(
-                android.util.Base64.decode(payload, android.util.Base64.URL_SAFE),
-                Charsets.UTF_8,
-            )
-            val obj = json.parseToJsonElement(jsonPayload) as? JsonObject
-            obj?.get("exp")?.jsonPrimitive?.longOrNull
-        }.getOrNull() ?: return true
-        val expiresAtMs = exp * 1000L
+        val expiresAtMs = authRepository.getExpiresAtEpochMs()
+            ?: authRepository.readJwtExpiryEpochMs(accessToken)
+            ?: return true
         return expiresAtMs - System.currentTimeMillis() <= 2 * 60 * 1000L
     }
 
@@ -238,7 +224,7 @@ class AppContainer(context: Context) {
                     authRepository.clear()
                     return false
                 }
-                authRepository.saveTokens(access, refresh, dto.lestaExpiresAt)
+                authRepository.saveTokens(access, refresh, dto.lestaExpiresAt, dto.expiresAt)
                 true
             }
         }.getOrElse {

@@ -61,6 +61,7 @@ data class OpenIdAuthResponseDto(
     @SerialName("access_token") val accessToken: String? = null,
     @SerialName("refresh_token") val refreshToken: String? = null,
     @SerialName("lesta_expires_at") val lestaExpiresAt: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
 )
 
 @Serializable

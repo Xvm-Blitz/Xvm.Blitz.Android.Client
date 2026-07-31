@@ -35,6 +35,21 @@ class SecureStorage(context: Context) {
 
     fun loadLestaExpiresAt(): String? = prefs.getString(KEY_LESTA_EXPIRES_AT, null)
 
+    fun saveExpiresAtEpochMs(value: Long) {
+        prefs.edit().putLong(KEY_EXPIRES_AT_EPOCH_MS, value).apply()
+    }
+
+    fun loadExpiresAtEpochMs(): Long? {
+        if (!prefs.contains(KEY_EXPIRES_AT_EPOCH_MS)) {
+            return null
+        }
+        return prefs.getLong(KEY_EXPIRES_AT_EPOCH_MS, 0L).takeIf { it > 0L }
+    }
+
+    fun clearExpiresAtEpochMs() {
+        prefs.edit().remove(KEY_EXPIRES_AT_EPOCH_MS).apply()
+    }
+
     fun clear() {
         prefs.edit().clear().apply()
     }
@@ -44,5 +59,6 @@ class SecureStorage(context: Context) {
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_LESTA_EXPIRES_AT = "lesta_expires_at"
+        private const val KEY_EXPIRES_AT_EPOCH_MS = "expires_at_epoch_ms"
     }
 }

@@ -186,9 +186,10 @@ class MainViewModel(
         accessToken: String,
         refreshToken: String,
         lestaExpiresAt: String?,
+        expiresAt: String? = null,
     ) {
         viewModelScope.launch {
-            if (!container.authRepository.saveTokens(accessToken, refreshToken, lestaExpiresAt)) {
+            if (!container.authRepository.saveTokens(accessToken, refreshToken, lestaExpiresAt, expiresAt)) {
                 usageError.value = "Не удалось сохранить токены авторизации"
                 return@launch
             }
@@ -296,7 +297,9 @@ class MainViewModel(
                     return@launch
                 }
                 loadSessionHistory(page = 1, showBusy = false, preferSessionId = createdSessionId)
-                setSessionStatus("Сессия создана", isError = false)
+                if (!sessionState.value.isStatusError) {
+                    setSessionStatus("Сессия создана", isError = false)
+                }
             } finally {
                 sessionState.value = sessionState.value.copy(isBusy = false)
             }
@@ -336,7 +339,9 @@ class MainViewModel(
                     return@launch
                 }
                 loadSessionHistory(page = sessionState.value.historyPage, showBusy = false)
-                setSessionStatus("Сессия завершена", isError = false)
+                if (!sessionState.value.isStatusError) {
+                    setSessionStatus("Сессия завершена", isError = false)
+                }
             } finally {
                 sessionState.value = sessionState.value.copy(isBusy = false)
             }
@@ -480,7 +485,7 @@ class MainViewModel(
             container.settingsRepository.setSelectedSessionId(selected?.id)
             loadSessionBattles()
             updateActiveSessionConnection()
-            if (showBusy) {
+            if (showBusy && !sessionState.value.isStatusError) {
                 setSessionStatus(
                     if (payload.totalCount == 0) {
                         "История сессий пуста"
@@ -516,11 +521,11 @@ class MainViewModel(
         }
         sessionState.value = sessionState.value.copy(isBattlesLoading = true)
         try {
-            val usage = try {
+            try {
                 if (!container.authRepository.isAuthorized) {
                     error(AppAlertNotifier.DEFAULT_AUTH_MESSAGE)
                 }
-                container.usageApi.getUsage().also { usageState.value = it }
+                usageState.value = container.usageApi.getUsage()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
@@ -541,50 +546,30 @@ class MainViewModel(
 
             val targetPage = page.coerceAtLeast(1)
 
-            if (usage.type == AccessType.Trial) {
-                sessionState.value = sessionState.value.copy(
-                    battles = emptyList(),
-                    battlesPage = 1,
-                    battlesTotalCount = 0,
-                )
-                val result = container.sessionsRepository.getAggregatedStatistics(selected.id)
-                if (result.isFailure) {
-                    clearSessionBattlesSummary()
+            coroutineScope {
+                val extendedDeferred = async {
+                    container.sessionsRepository.getExtendedStatistics(
+                        sessionId = selected.id,
+                        page = targetPage,
+                        pageSize = SessionUiState.SESSION_BATTLES_PAGE_SIZE,
+                    )
+                }
+                val aggregatedDeferred = async {
+                    container.sessionsRepository.getAggregatedStatistics(selected.id)
+                }
+
+                val extendedResult = extendedDeferred.await()
+                if (extendedResult.isFailure) {
+                    sessionState.value = sessionState.value.copy(
+                        battles = emptyList(),
+                        battlesPage = 1,
+                        battlesTotalCount = 0,
+                    )
                     setSessionStatus(
-                        result.exceptionOrNull()?.message ?: "Не удалось загрузить статистику сессии",
+                        extendedResult.exceptionOrNull()?.message ?: "Не удалось загрузить бои сессии",
                         isError = true,
                     )
-                    return
-                }
-                applyAggregatedSummary(result.getOrThrow())
-            } else {
-                coroutineScope {
-                    val extendedDeferred = async {
-                        container.sessionsRepository.getExtendedStatistics(
-                            sessionId = selected.id,
-                            page = targetPage,
-                            pageSize = SessionUiState.SESSION_BATTLES_PAGE_SIZE,
-                        )
-                    }
-                    val aggregatedDeferred = async {
-                        container.sessionsRepository.getAggregatedStatistics(selected.id)
-                    }
-
-                    val extendedResult = extendedDeferred.await()
-                    if (extendedResult.isFailure) {
-                        sessionState.value = sessionState.value.copy(
-                            battles = emptyList(),
-                            battlesPage = 1,
-                            battlesTotalCount = 0,
-                        )
-                        clearSessionBattlesSummary()
-                        setSessionStatus(
-                            extendedResult.exceptionOrNull()?.message ?: "Не удалось загрузить бои сессии",
-                            isError = true,
-                        )
-                        return@coroutineScope
-                    }
-
+                } else {
                     val statistics = extendedResult.getOrThrow()
                     val battles = statistics.battles.map(SessionBattleListItem::fromDto)
                     sessionState.value = sessionState.value.copy(
@@ -592,12 +577,20 @@ class MainViewModel(
                         battlesPage = statistics.page,
                         battlesTotalCount = statistics.totalCount,
                     )
+                    clearSessionStatus()
+                }
 
-                    val aggregatedResult = aggregatedDeferred.await()
-                    if (aggregatedResult.isSuccess) {
-                        applyAggregatedSummary(aggregatedResult.getOrThrow())
-                    } else {
-                        clearSessionBattlesSummary()
+                val aggregatedResult = aggregatedDeferred.await()
+                if (aggregatedResult.isSuccess) {
+                    applyAggregatedSummary(aggregatedResult.getOrThrow())
+                } else {
+                    clearSessionBattlesSummary()
+                    if (extendedResult.isSuccess) {
+                        setSessionStatus(
+                            aggregatedResult.exceptionOrNull()?.message
+                                ?: "Не удалось загрузить статистику сессии",
+                            isError = true,
+                        )
                     }
                 }
             }
