@@ -1,6 +1,7 @@
 package ru.xvmblitz.android.domain
 
 import android.net.Uri
+import android.util.Log
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
 import com.microsoft.signalr.HubConnectionState
@@ -28,20 +29,21 @@ class PresenceRuntimeService(
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var connection: HubConnection? = null
-    private var heartbeatJob: Job? = null
+    private var loopJob: Job? = null
     private var connectGeneration = 0
     private var enabled = false
 
     suspend fun start() {
         mutex.withLock {
             enabled = true
-            ensureConnectedInternal()
+            restartLoop()
         }
     }
 
     suspend fun stop() {
         mutex.withLock {
             enabled = false
+            stopLoop()
             disconnectInternal()
         }
     }
@@ -58,8 +60,34 @@ class PresenceRuntimeService(
     suspend fun dispose() {
         mutex.withLock {
             enabled = false
+            stopLoop()
             disconnectInternal()
         }
+    }
+
+    private fun restartLoop() {
+        stopLoop()
+        loopJob = scope.launch {
+            while (isActive) {
+                try {
+                    mutex.withLock {
+                        if (!enabled) {
+                            return@withLock
+                        }
+                        ensureConnectedInternal()
+                        sendHeartbeatInternal()
+                    }
+                } catch (exception: Exception) {
+                    Log.w(Tag, "Presence loop iteration failed", exception)
+                }
+                delay(HeartbeatIntervalMs)
+            }
+        }
+    }
+
+    private fun stopLoop() {
+        loopJob?.cancel()
+        loopJob = null
     }
 
     private suspend fun ensureConnectedInternal() {
@@ -88,7 +116,6 @@ class PresenceRuntimeService(
             scope.launch {
                 mutex.withLock {
                     if (connection === hub) {
-                        stopHeartbeat()
                         connection = null
                     }
                 }
@@ -96,6 +123,7 @@ class PresenceRuntimeService(
         }
         withContext(Dispatchers.IO) {
             runCatching { hub.start().blockingAwait() }
+                .onFailure { Log.w(Tag, "Failed to connect presence hub", it) }
         }
         if (generation != connectGeneration) {
             withContext(Dispatchers.IO) {
@@ -107,31 +135,22 @@ class PresenceRuntimeService(
             return
         }
         connection = hub
-        startHeartbeat(hub)
+        sendHeartbeatInternal()
     }
 
-    private fun startHeartbeat(hub: HubConnection) {
-        stopHeartbeat()
-        heartbeatJob = scope.launch {
-            while (isActive) {
-                delay(HeartbeatIntervalMs)
-                val activeHub = mutex.withLock { connection }
-                if (activeHub !== hub || hub.connectionState != HubConnectionState.CONNECTED) {
-                    break
-                }
-                runCatching { hub.send("Heartbeat") }
-            }
+    private suspend fun sendHeartbeatInternal() {
+        val hub = connection ?: return
+        if (hub.connectionState != HubConnectionState.CONNECTED) {
+            return
         }
-    }
-
-    private fun stopHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = null
+        withContext(Dispatchers.IO) {
+            runCatching { hub.invoke("Heartbeat").blockingAwait() }
+                .onFailure { Log.w(Tag, "Presence heartbeat failed", it) }
+        }
     }
 
     private suspend fun disconnectInternal() {
         connectGeneration++
-        stopHeartbeat()
         val hub = connection ?: return
         connection = null
         withContext(Dispatchers.IO) {
@@ -164,6 +183,7 @@ class PresenceRuntimeService(
     }
 
     private companion object {
-        const val HeartbeatIntervalMs = 30_000L
+        const val Tag = "PresenceRuntime"
+        const val HeartbeatIntervalMs = 20_000L
     }
 }
