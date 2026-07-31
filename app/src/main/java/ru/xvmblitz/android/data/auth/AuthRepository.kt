@@ -8,7 +8,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import java.time.OffsetDateTime
 
 class AuthRepository(private val secureStorage: SecureStorage) {
     private val _accessToken = MutableStateFlow(secureStorage.loadAccessToken())
@@ -45,7 +44,6 @@ class AuthRepository(private val secureStorage: SecureStorage) {
         accessToken: String,
         refreshToken: String,
         lestaExpiresAt: String?,
-        expiresAt: String? = null,
     ): Boolean {
         val access = accessToken.trim()
         val refresh = refreshToken.trim()
@@ -57,7 +55,7 @@ class AuthRepository(private val secureStorage: SecureStorage) {
         if (!lestaExpiresAt.isNullOrBlank()) {
             secureStorage.saveLestaExpiresAt(lestaExpiresAt.trim())
         }
-        val expiresAtEpochMs = parseExpiresAtEpochMs(expiresAt) ?: readJwtExpiryEpochMs(access)
+        val expiresAtEpochMs = readJwtExpiryEpochMs(access)
         if (expiresAtEpochMs != null) {
             secureStorage.saveExpiresAtEpochMs(expiresAtEpochMs)
         } else {
@@ -72,19 +70,6 @@ class AuthRepository(private val secureStorage: SecureStorage) {
         secureStorage.clear()
         _accessToken.value = null
         _refreshToken.value = null
-    }
-
-    fun parseExpiresAtEpochMs(raw: String?): Long? {
-        if (raw.isNullOrBlank()) {
-            return null
-        }
-        val trimmed = raw.trim()
-        trimmed.toLongOrNull()?.let { value ->
-            return if (value < 10_000_000_000L) value * 1000L else value
-        }
-        return runCatching {
-            OffsetDateTime.parse(trimmed).toInstant().toEpochMilli()
-        }.getOrNull()
     }
 
     fun readJwtExpiryEpochMs(accessToken: String): Long? {

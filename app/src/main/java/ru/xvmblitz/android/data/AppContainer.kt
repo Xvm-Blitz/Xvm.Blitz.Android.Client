@@ -224,7 +224,7 @@ class AppContainer(context: Context) {
                     authRepository.clear()
                     return false
                 }
-                authRepository.saveTokens(access, refresh, dto.lestaExpiresAt, dto.expiresAt)
+                authRepository.saveTokens(access, refresh, dto.lestaExpiresAt)
                 true
             }
         }.getOrElse {

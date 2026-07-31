@@ -186,10 +186,9 @@ class MainViewModel(
         accessToken: String,
         refreshToken: String,
         lestaExpiresAt: String?,
-        expiresAt: String? = null,
     ) {
         viewModelScope.launch {
-            if (!container.authRepository.saveTokens(accessToken, refreshToken, lestaExpiresAt, expiresAt)) {
+            if (!container.authRepository.saveTokens(accessToken, refreshToken, lestaExpiresAt)) {
                 usageError.value = "Не удалось сохранить токены авторизации"
                 return@launch
             }

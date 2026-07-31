@@ -112,13 +112,11 @@ class MainActivity : ComponentActivity() {
                             val accessToken = data.getQueryParameter("access_token")
                             val refreshToken = data.getQueryParameter("refresh_token")
                             val lestaExpiresAt = data.getQueryParameter("lesta_expires_at")
-                            val expiresAt = data.getQueryParameter("expires_at")
                             if (!accessToken.isNullOrBlank() && !refreshToken.isNullOrBlank()) {
                                 mainViewModel.handleOpenIdCallback(
                                     accessToken = accessToken,
                                     refreshToken = refreshToken,
                                     lestaExpiresAt = lestaExpiresAt,
-                                    expiresAt = expiresAt,
                                 )
                                 navController.navigate(Routes.Auth) {
                                     launchSingleTop = true
