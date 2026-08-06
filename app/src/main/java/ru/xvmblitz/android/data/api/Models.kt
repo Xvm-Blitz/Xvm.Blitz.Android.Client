@@ -94,6 +94,11 @@ data class GetSubscriptionUserPricingResponseDto(
 )
 
 @Serializable
+data class CreateSubscriptionPaymentRequestDto(
+    @SerialName("receipt_email") val receiptEmail: String,
+)
+
+@Serializable
 data class CreateSubscriptionPaymentResponseDto(
     @SerialName("payment_id") val paymentId: String,
     @SerialName("confirmation_url") val confirmationUrl: String,

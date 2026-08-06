@@ -18,6 +18,7 @@ import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.AppContainer
 import ru.xvmblitz.android.data.api.AccessType
+import ru.xvmblitz.android.data.api.CreateSubscriptionPaymentRequestDto
 import ru.xvmblitz.android.data.api.GetSubscriptionPublicPricingResponseDto
 import ru.xvmblitz.android.data.api.GetSubscriptionUserPricingResponseDto
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
@@ -223,7 +224,10 @@ class MainViewModel(
         }
     }
 
-    fun createSubscriptionPayment(onOpenPaymentUrl: (String) -> Unit) {
+    fun createSubscriptionPayment(
+        receiptEmail: String,
+        onOpenPaymentUrl: (String) -> Unit,
+    ) {
         viewModelScope.launch {
             if (!container.authRepository.isAuthorized) {
                 paymentStatusMessage.value = AppAlertNotifier.DEFAULT_AUTH_MESSAGE
@@ -232,11 +236,18 @@ class MainViewModel(
             if (paymentCreating.value || paymentPending.value) {
                 return@launch
             }
+            val normalizedReceiptEmail = receiptEmail.trim()
+            if (!isValidReceiptEmail(normalizedReceiptEmail)) {
+                paymentStatusMessage.value = "Укажите корректный email для чека"
+                return@launch
+            }
             paymentCreating.value = true
             paymentStatusClearJob?.cancel()
             paymentStatusMessage.value = "Создание платежа..."
             try {
-                val payment = container.subscriptionApi.createPayment()
+                val payment = container.subscriptionApi.createPayment(
+                    CreateSubscriptionPaymentRequestDto(normalizedReceiptEmail),
+                )
                 paymentStatusMessage.value =
                     "Откройте браузер для оплаты ${formatSubscriptionAmount(payment.amount, payment.currency)}"
                 onOpenPaymentUrl(payment.confirmationUrl)
@@ -249,6 +260,10 @@ class MainViewModel(
                 paymentCreating.value = false
             }
         }
+    }
+
+    private fun isValidReceiptEmail(email: String): Boolean {
+        return android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
     }
 
     private fun startPaymentPolling(paymentId: String) {

@@ -29,7 +29,9 @@ interface SubscriptionApi {
     suspend fun getUserPricing(): GetSubscriptionUserPricingResponseDto
 
     @POST("v1/subscriptions/payments")
-    suspend fun createPayment(): CreateSubscriptionPaymentResponseDto
+    suspend fun createPayment(
+        @Body request: CreateSubscriptionPaymentRequestDto,
+    ): CreateSubscriptionPaymentResponseDto
 
     @GET("v1/subscriptions/payments/{paymentId}")
     suspend fun getPayment(

@@ -74,7 +74,7 @@ fun AuthScreen(
     onAuthorized: () -> Unit,
     onLogout: () -> Unit,
     onRefreshUsage: () -> Unit,
-    onCreateSubscriptionPayment: (onOpenPaymentUrl: (String) -> Unit) -> Unit,
+    onCreateSubscriptionPayment: (receiptEmail: String, onOpenPaymentUrl: (String) -> Unit) -> Unit,
 ) {
     BackHandler(onBack = onBack)
 
@@ -247,10 +247,11 @@ private fun AuthorizedQuotaContent(
     isPaymentCreating: Boolean,
     isPaymentPending: Boolean,
     onLogout: () -> Unit,
-    onCreateSubscriptionPayment: (onOpenPaymentUrl: (String) -> Unit) -> Unit,
+    onCreateSubscriptionPayment: (receiptEmail: String, onOpenPaymentUrl: (String) -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var receiptEmail by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier,
@@ -307,9 +308,17 @@ private fun AuthorizedQuotaContent(
                             )
                         }
                     }
+                    OutlinedTextField(
+                        value = receiptEmail,
+                        onValueChange = { receiptEmail = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Email для чека") },
+                        singleLine = true,
+                        enabled = !isPaymentCreating && !isPaymentPending,
+                    )
                     Button(
                         onClick = {
-                            onCreateSubscriptionPayment { url ->
+                            onCreateSubscriptionPayment(receiptEmail) { url ->
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                             }
                         },
