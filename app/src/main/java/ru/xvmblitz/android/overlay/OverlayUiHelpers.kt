@@ -15,7 +15,7 @@ fun winRateColor(winRate: Double?): Color {
 }
 
 fun formatBattles(numberOfBattles: Int?): String {
-    val value = numberOfBattles ?: return "—"
+    val value = numberOfBattles ?: return "-"
     return when {
         value >= 10_000 -> "${value / 1000}k"
         value >= 1000 -> String.format("%.1fk", value / 1000.0).replace(".0k", "k")

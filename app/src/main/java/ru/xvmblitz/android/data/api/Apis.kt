@@ -21,6 +21,22 @@ interface UsageApi {
     suspend fun getUsage(): GetUsageResponseDto
 }
 
+interface SubscriptionApi {
+    @GET("v1/subscriptions/pricing")
+    suspend fun getPublicPricing(): GetSubscriptionPublicPricingResponseDto
+
+    @GET("v1/subscriptions/pricing/me")
+    suspend fun getUserPricing(): GetSubscriptionUserPricingResponseDto
+
+    @POST("v1/subscriptions/payments")
+    suspend fun createPayment(): CreateSubscriptionPaymentResponseDto
+
+    @GET("v1/subscriptions/payments/{paymentId}")
+    suspend fun getPayment(
+        @retrofit2.http.Path("paymentId") paymentId: String,
+    ): GetSubscriptionPaymentResponseDto
+}
+
 interface OpenIdApi {
     @POST("v1/auth/openid/refresh")
     suspend fun refresh(

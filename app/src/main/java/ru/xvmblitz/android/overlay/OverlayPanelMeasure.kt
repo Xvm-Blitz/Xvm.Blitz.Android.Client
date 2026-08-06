@@ -69,15 +69,15 @@ fun formatWinRate(winRate: Double): String {
 fun playerRowCells(player: PlayerSlot, mirrored: Boolean): List<String> {
     val nickname = formatNicknameWithClan(player, mirrored)
     val tank = if (player.isMissing) {
-        "—"
+        "-"
     } else {
-        player.tank.orEmpty().ifEmpty { "—" }
+        player.tank.orEmpty().ifEmpty { "-" }
     }
-    val battles = if (player.isMissing) "—" else formatBattles(player.numberOfBattles)
+    val battles = if (player.isMissing) "-" else formatBattles(player.numberOfBattles)
     val winRate = if (player.isMissing) {
-        "—"
+        "-"
     } else {
-        player.winRate?.let(::formatWinRate) ?: "—"
+        player.winRate?.let(::formatWinRate) ?: "-"
     }
     return if (mirrored) {
         listOf(winRate, battles, tank, nickname)
@@ -88,12 +88,12 @@ fun playerRowCells(player: PlayerSlot, mirrored: Boolean): List<String> {
 
 fun formatNicknameWithClan(player: PlayerSlot, mirrored: Boolean): String {
     if (player.isMissing) {
-        return "—"
+        return "-"
     }
     val nickname = player.nickname.orEmpty()
     val clanTag = player.clanTag
     if (clanTag.isNullOrBlank()) {
-        return nickname.ifEmpty { "—" }
+        return nickname.ifEmpty { "-" }
     }
     return if (mirrored) {
         "$nickname [$clanTag]"

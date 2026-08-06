@@ -35,11 +35,14 @@ data class BattlePlayerStatisticsDto(
 
 @Serializable
 enum class AccessType {
-    @SerialName("trial")
-    Trial,
+    @SerialName("free")
+    Free,
 
     @SerialName("fullAccess")
     FullAccess,
+
+    @SerialName("trial")
+    Trial,
 }
 
 @Serializable
@@ -49,6 +52,66 @@ data class GetUsageResponseDto(
     @SerialName("current_usage") val currentUsage: Int,
     @SerialName("period_start") val periodStart: String,
     @SerialName("period_end") val periodEnd: String,
+)
+
+@Serializable
+enum class SubscriptionPaymentStatus {
+    @SerialName("pending")
+    Pending,
+
+    @SerialName("succeeded")
+    Succeeded,
+
+    @SerialName("canceled")
+    Canceled,
+
+    @SerialName("paymentMismatch")
+    PaymentMismatch,
+}
+
+@Serializable
+data class GetSubscriptionPublicPricingResponseDto(
+    @SerialName("amount") val amount: Double,
+    @SerialName("currency") val currency: String,
+    @SerialName("billing_period") val billingPeriod: String,
+)
+
+@Serializable
+data class SubscriptionPeriodResponseDto(
+    @SerialName("start") val start: String,
+    @SerialName("end") val end: String,
+)
+
+@Serializable
+data class GetSubscriptionUserPricingResponseDto(
+    @SerialName("amount") val amount: Double,
+    @SerialName("currency") val currency: String,
+    @SerialName("billing_period") val billingPeriod: String,
+    @SerialName("is_grandfathered") val isGrandfathered: Boolean = false,
+    @SerialName("premium_until") val premiumUntil: String? = null,
+    @SerialName("legacy_price_until") val legacyPriceUntil: String? = null,
+    @SerialName("next_payment_period") val nextPaymentPeriod: SubscriptionPeriodResponseDto,
+)
+
+@Serializable
+data class CreateSubscriptionPaymentResponseDto(
+    @SerialName("payment_id") val paymentId: String,
+    @SerialName("confirmation_url") val confirmationUrl: String,
+    @SerialName("amount") val amount: Double,
+    @SerialName("currency") val currency: String,
+    @SerialName("period_start") val periodStart: String,
+    @SerialName("period_end") val periodEnd: String,
+)
+
+@Serializable
+data class GetSubscriptionPaymentResponseDto(
+    @SerialName("payment_id") val paymentId: String,
+    @SerialName("status") val status: SubscriptionPaymentStatus,
+    @SerialName("amount") val amount: Double,
+    @SerialName("currency") val currency: String,
+    @SerialName("period_start") val periodStart: String,
+    @SerialName("period_end") val periodEnd: String,
+    @SerialName("paid_at") val paidAt: String? = null,
 )
 
 @Serializable

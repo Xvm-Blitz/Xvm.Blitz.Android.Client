@@ -235,7 +235,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
         val scaleX = preview?.scaleX ?: settings.sessionSummaryOverlayScaleX
         val scaleY = preview?.scaleY ?: settings.sessionSummaryOverlayScaleY
-        val useExample = settings.configMode && summary.battlesText == "—"
+        val useExample = settings.configMode && summary.battlesText == "-"
         SessionSummaryOverlayContent(
             battlesText = if (useExample) "12 б." else summary.battlesText,
             winRateText = if (useExample) "58.3%" else summary.winRateText,

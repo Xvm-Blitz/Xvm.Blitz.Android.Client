@@ -204,9 +204,14 @@ class MainActivity : ComponentActivity() {
                             AuthScreen(
                                 isAuthorized = uiState.isAuthorized,
                                 usage = uiState.usage,
+                                subscriptionPricing = uiState.subscriptionPricing,
+                                publicSubscriptionPricing = uiState.publicSubscriptionPricing,
                                 usageError = uiState.usageError,
+                                paymentStatusMessage = uiState.paymentStatusMessage,
                                 usageUpdatedAtEpochMs = uiState.usageUpdatedAtEpochMs,
                                 isUsageLoading = uiState.isUsageLoading,
+                                isPaymentCreating = uiState.isPaymentCreating,
+                                isPaymentPending = uiState.isPaymentPending,
                                 onBack = {
                                     navController.popBackStack()
                                 },
@@ -218,6 +223,7 @@ class MainActivity : ComponentActivity() {
                                     mainViewModel.logout()
                                 },
                                 onRefreshUsage = mainViewModel::refreshUsage,
+                                onCreateSubscriptionPayment = mainViewModel::createSubscriptionPayment,
                             )
                         }
                     }

@@ -25,7 +25,7 @@ data class SessionListItem(
                 return "Активная · $created"
             }
             val ended = formatDateTime(endedAt.orEmpty())
-            return "Завершена · $created — $ended"
+            return "Завершена · $created - $ended"
         }
 
     companion object {
@@ -53,11 +53,11 @@ data class SessionBattleListItem(
             SessionBattleListItem(
                 id = battle.id,
                 createdAt = battle.createdAt,
-                tankName = battle.tankName?.takeIf { it.isNotBlank() } ?: "—",
+                tankName = battle.tankName?.takeIf { it.isNotBlank() } ?: "-",
                 resultText = formatResult(battle.result, battle.endedAt),
                 resultBackground = resolveResultBackground(battle.result, battle.endedAt),
-                fragsText = battle.frags?.toString() ?: "—",
-                damageText = battle.damageDealt?.toString() ?: "—",
+                fragsText = battle.frags?.toString() ?: "-",
+                damageText = battle.damageDealt?.toString() ?: "-",
                 startedAtText = formatDateTime(battle.createdAt),
             )
     }
@@ -169,7 +169,7 @@ private fun formatResult(result: String?, endedAt: String?): String {
         "win", "won" -> "Победа"
         "loss", "lost" -> "Поражение"
         "draw" -> "Ничья"
-        else -> "—"
+        else -> "-"
     }
 }
 

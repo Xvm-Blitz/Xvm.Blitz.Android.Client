@@ -5,9 +5,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 data class SessionSummaryOverlayState(
-    val battlesText: String = "—",
-    val winRateText: String = "—",
-    val damageText: String = "—",
+    val battlesText: String = "-",
+    val winRateText: String = "-",
+    val damageText: String = "-",
 )
 
 class SessionSummaryStore {

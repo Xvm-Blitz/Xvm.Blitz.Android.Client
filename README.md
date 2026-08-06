@@ -32,7 +32,7 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 В репозитории лежит **debug keystore** `app/keystore/xvm-debug.jks` (alias `androiddebugkey`, пароль `android`). Он нужен только для локальной разработки и CI без production-секретов.
 
-Настройки подписи: `app/keystore.properties` (шаблон — `app/keystore.properties.example`).
+Настройки подписи: `app/keystore.properties` (шаблон - `app/keystore.properties.example`).
 
 ```powershell
 .\gradlew.bat :app:assembleRelease

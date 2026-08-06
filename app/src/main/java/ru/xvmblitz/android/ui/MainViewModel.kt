@@ -18,7 +18,10 @@ import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.data.ApiDefaults
 import ru.xvmblitz.android.data.AppContainer
 import ru.xvmblitz.android.data.api.AccessType
+import ru.xvmblitz.android.data.api.GetSubscriptionPublicPricingResponseDto
+import ru.xvmblitz.android.data.api.GetSubscriptionUserPricingResponseDto
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
+import ru.xvmblitz.android.data.api.SubscriptionPaymentStatus
 import ru.xvmblitz.android.data.api.SessionAggregatedStatisticsDto
 import ru.xvmblitz.android.data.api.SessionBattleBriefDto
 import ru.xvmblitz.android.data.api.SessionBattleCompletedHubDto
@@ -36,10 +39,16 @@ import ru.xvmblitz.android.update.createAppUpdateFacade
 data class MainUiState(
     val settings: AppSettings = AppSettings(),
     val usage: GetUsageResponseDto? = null,
+    val subscriptionPricing: GetSubscriptionUserPricingResponseDto? = null,
+    val publicSubscriptionPricing: GetSubscriptionPublicPricingResponseDto? = null,
     val battle: BattleUiState = BattleUiState(),
     val usageError: String? = null,
+    val subscriptionError: String? = null,
+    val paymentStatusMessage: String? = null,
     val usageUpdatedAtEpochMs: Long? = null,
     val isUsageLoading: Boolean = false,
+    val isPaymentCreating: Boolean = false,
+    val isPaymentPending: Boolean = false,
     val isAuthorized: Boolean = false,
     val update: UpdateUiState = UpdateUiState(),
     val session: SessionUiState = SessionUiState(),
@@ -49,47 +58,106 @@ class MainViewModel(
     private val container: AppContainer,
 ) : ViewModel(), BattleSessionRuntimeListener {
     private val usageState = MutableStateFlow<GetUsageResponseDto?>(null)
+    private val subscriptionPricingState = MutableStateFlow<GetSubscriptionUserPricingResponseDto?>(null)
+    private val publicSubscriptionPricingState = MutableStateFlow<GetSubscriptionPublicPricingResponseDto?>(null)
     private val usageError = MutableStateFlow<String?>(null)
+    private val subscriptionError = MutableStateFlow<String?>(null)
+    private val paymentStatusMessage = MutableStateFlow<String?>(null)
     private val usageUpdatedAtEpochMs = MutableStateFlow<Long?>(null)
     private val usageLoading = MutableStateFlow(false)
+    private val paymentCreating = MutableStateFlow(false)
+    private val paymentPending = MutableStateFlow(false)
+    private var paymentPollingJob: Job? = null
+    private var paymentStatusClearJob: Job? = null
     private val sessionState = MutableStateFlow(SessionUiState())
     private var sessionStatusCountdownJob: Job? = null
     private val updateFacade = createAppUpdateFacade(container)
 
     val uiState: StateFlow<MainUiState> = combine(
         combine(
-            container.settingsRepository.settings,
-            container.battleStatisticsStore.state,
-            usageState,
+            combine(
+                container.settingsRepository.settings,
+                container.battleStatisticsStore.state,
+                usageState,
+                subscriptionPricingState,
+                publicSubscriptionPricingState,
+            ) { settings, battle, usage, subscriptionPricing, publicSubscriptionPricing ->
+                MainUiState(
+                    settings = settings,
+                    usage = usage,
+                    subscriptionPricing = subscriptionPricing,
+                    publicSubscriptionPricing = publicSubscriptionPricing,
+                    battle = battle,
+                )
+            },
             container.authRepository.accessToken,
-            sessionState,
-        ) { settings, battle, usage, accessToken, session ->
-            MainUiState(
-                settings = settings,
-                usage = usage,
-                battle = battle,
-                isAuthorized = !accessToken.isNullOrBlank(),
-                session = session.copy(
-                    isSummaryOverlayVisible = settings.sessionSummaryOverlayVisible,
-                    isTrialStatistics = usage?.type == AccessType.Trial,
-                ),
+        ) { baseState, accessToken ->
+            baseState.copy(isAuthorized = !accessToken.isNullOrBlank())
+        },
+        sessionState,
+        combine(
+            combine(
+                usageError,
+                subscriptionError,
+                paymentStatusMessage,
+                usageLoading,
+                paymentCreating,
+            ) { error, subscriptionErr, paymentMessage, loading, creating ->
+                AccountExtrasLoading(
+                    error = error,
+                    subscriptionError = subscriptionErr,
+                    paymentMessage = paymentMessage,
+                    loading = loading,
+                    creating = creating,
+                )
+            },
+            paymentPending,
+            updateFacade.state,
+            usageUpdatedAtEpochMs,
+        ) { loadingExtras, pending, update, updatedAt ->
+            AccountExtras(
+                error = loadingExtras.error,
+                subscriptionError = loadingExtras.subscriptionError,
+                paymentMessage = loadingExtras.paymentMessage,
+                loading = loadingExtras.loading,
+                creating = loadingExtras.creating,
+                pending = pending,
+                update = update,
+                updatedAtEpochMs = updatedAt,
             )
         },
-        combine(usageError, usageLoading, updateFacade.state, usageUpdatedAtEpochMs) { error, loading, update, updatedAt ->
-            UsageExtras(error, loading, update, updatedAt)
-        },
-    ) { baseState, extras ->
+    ) { baseState, session, extras ->
         baseState.copy(
+            session = session.copy(
+                isSummaryOverlayVisible = baseState.settings.sessionSummaryOverlayVisible,
+                isTrialStatistics = baseState.usage?.type == AccessType.Free || baseState.usage?.type == AccessType.Trial,
+            ),
             usageError = extras.error,
+            subscriptionError = extras.subscriptionError,
+            paymentStatusMessage = extras.paymentMessage,
             isUsageLoading = extras.loading,
+            isPaymentCreating = extras.creating,
+            isPaymentPending = extras.pending,
             update = extras.update,
             usageUpdatedAtEpochMs = extras.updatedAtEpochMs,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
-    private data class UsageExtras(
+    private data class AccountExtrasLoading(
         val error: String?,
+        val subscriptionError: String?,
+        val paymentMessage: String?,
         val loading: Boolean,
+        val creating: Boolean,
+    )
+
+    private data class AccountExtras(
+        val error: String?,
+        val subscriptionError: String?,
+        val paymentMessage: String?,
+        val loading: Boolean,
+        val creating: Boolean,
+        val pending: Boolean,
         val update: UpdateUiState,
         val updatedAtEpochMs: Long?,
     )
@@ -106,6 +174,7 @@ class MainViewModel(
 
     override fun onCleared() {
         sessionStatusCountdownJob?.cancel()
+        paymentPollingJob?.cancel()
         container.battleSessionRuntimeService.setListener(null)
         viewModelScope.launch {
             container.battleSessionRuntimeService.dispose()
@@ -136,22 +205,99 @@ class MainViewModel(
         viewModelScope.launch {
             if (!container.authRepository.isAuthorized) {
                 usageState.value = null
+                subscriptionPricingState.value = null
+                publicSubscriptionPricingState.value = null
                 usageError.value = AppAlertNotifier.DEFAULT_AUTH_MESSAGE
                 return@launch
             }
             usageLoading.value = true
             usageError.value = null
+            subscriptionError.value = null
             try {
-                usageState.value = container.usageApi.getUsage()
-                usageUpdatedAtEpochMs.value = System.currentTimeMillis()
+                loadAccountData(clearUsageOnFailure = false)
             } catch (exception: CancellationException) {
                 throw exception
-            } catch (exception: Exception) {
-                usageError.value = exception.message ?: "Не удалось получить квоту"
             } finally {
                 usageLoading.value = false
             }
         }
+    }
+
+    fun createSubscriptionPayment(onOpenPaymentUrl: (String) -> Unit) {
+        viewModelScope.launch {
+            if (!container.authRepository.isAuthorized) {
+                paymentStatusMessage.value = AppAlertNotifier.DEFAULT_AUTH_MESSAGE
+                return@launch
+            }
+            if (paymentCreating.value || paymentPending.value) {
+                return@launch
+            }
+            paymentCreating.value = true
+            paymentStatusClearJob?.cancel()
+            paymentStatusMessage.value = "Создание платежа..."
+            try {
+                val payment = container.subscriptionApi.createPayment()
+                paymentStatusMessage.value =
+                    "Откройте браузер для оплаты ${formatSubscriptionAmount(payment.amount, payment.currency)}"
+                onOpenPaymentUrl(payment.confirmationUrl)
+                startPaymentPolling(payment.paymentId)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                paymentStatusMessage.value = exception.message ?: "Не удалось создать платёж"
+            } finally {
+                paymentCreating.value = false
+            }
+        }
+    }
+
+    private fun startPaymentPolling(paymentId: String) {
+        paymentPollingJob?.cancel()
+        paymentPollingJob = viewModelScope.launch {
+            paymentPending.value = true
+            try {
+                repeat(100) {
+                    delay(3_000)
+                    val status = container.subscriptionApi.getPayment(paymentId)
+                    paymentStatusMessage.value = when (status.status) {
+                        SubscriptionPaymentStatus.Pending -> "Ожидание оплаты..."
+                        SubscriptionPaymentStatus.Succeeded -> "Оплата прошла успешно"
+                        SubscriptionPaymentStatus.Canceled -> "Платёж отменён"
+                        SubscriptionPaymentStatus.PaymentMismatch -> "Ошибка сверки платежа. Обратитесь в поддержку."
+                    }
+                    if (status.status == SubscriptionPaymentStatus.Succeeded) {
+                        schedulePaymentSuccessMessageClear()
+                        refreshUsage()
+                        return@launch
+                    }
+                    if (status.status == SubscriptionPaymentStatus.Canceled ||
+                        status.status == SubscriptionPaymentStatus.PaymentMismatch
+                    ) {
+                        return@launch
+                    }
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+            } finally {
+                paymentPending.value = false
+            }
+        }
+    }
+
+    private fun schedulePaymentSuccessMessageClear() {
+        paymentStatusClearJob?.cancel()
+        paymentStatusClearJob = viewModelScope.launch {
+            delay(30_000)
+            if (paymentStatusMessage.value == "Оплата прошла успешно") {
+                paymentStatusMessage.value = null
+            }
+        }
+    }
+
+    private fun formatSubscriptionAmount(amount: Double, currency: String): String {
+        val formattedCurrency = if (currency.equals("RUB", ignoreCase = true)) "₽" else currency
+        return "${amount.toInt()} $formattedCurrency"
     }
 
     fun prepareDebugBaseUrl(
@@ -196,18 +342,47 @@ class MainViewModel(
             usageLoading.value = true
             usageError.value = null
             try {
-                usageState.value = container.usageApi.getUsage()
-                usageUpdatedAtEpochMs.value = System.currentTimeMillis()
+                loadAccountData(clearUsageOnFailure = true)
                 loadSessionHistory(page = 1, showBusy = false)
             } catch (exception: CancellationException) {
                 throw exception
-            } catch (exception: Exception) {
-                usageState.value = null
-                usageUpdatedAtEpochMs.value = null
-                usageError.value = exception.message ?: "Не удалось получить квоту"
             } finally {
                 usageLoading.value = false
             }
+        }
+    }
+
+    private suspend fun loadAccountData(clearUsageOnFailure: Boolean) {
+        val usageResult = runCatching { container.usageApi.getUsage() }
+        val pricingResult = runCatching { container.subscriptionApi.getUserPricing() }
+        val publicPricingResult = runCatching { container.subscriptionApi.getPublicPricing() }
+
+        usageResult
+            .onSuccess { usageState.value = it }
+            .onFailure { exception ->
+                if (clearUsageOnFailure || usageState.value == null) {
+                    usageState.value = null
+                    usageUpdatedAtEpochMs.value = null
+                    usageError.value = exception.message ?: "Не удалось получить информацию об использовании"
+                }
+            }
+
+        pricingResult
+            .onSuccess { subscriptionPricingState.value = it }
+            .onFailure { exception ->
+                subscriptionError.value = exception.message
+            }
+
+        publicPricingResult
+            .onSuccess { publicSubscriptionPricingState.value = it }
+            .onFailure { exception ->
+                if (subscriptionError.value.isNullOrBlank()) {
+                    subscriptionError.value = exception.message
+                }
+            }
+
+        if (usageResult.isSuccess || usageState.value != null) {
+            usageUpdatedAtEpochMs.value = System.currentTimeMillis()
         }
     }
 
@@ -396,13 +571,21 @@ class MainViewModel(
 
     fun logout() {
         viewModelScope.launch {
+            paymentPollingJob?.cancel()
+            paymentStatusClearJob?.cancel()
             runCatching { container.openIdApi.logout() }
             container.presenceRuntimeService.stop()
             container.battleSessionRuntimeService.setActiveSession(null, null)
             container.authRepository.clear()
             usageState.value = null
+            subscriptionPricingState.value = null
+            publicSubscriptionPricingState.value = null
             usageError.value = null
+            subscriptionError.value = null
+            paymentStatusMessage.value = null
             usageUpdatedAtEpochMs.value = null
+            paymentPending.value = false
+            paymentCreating.value = false
             container.battleStatisticsStore.clear()
             sessionState.value = SessionUiState(
                 isSummaryOverlayVisible = sessionState.value.isSummaryOverlayVisible,

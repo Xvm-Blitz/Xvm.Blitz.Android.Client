@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -49,6 +50,9 @@ import java.time.temporal.ChronoUnit
 import ru.xvmblitz.android.BuildConfig
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.data.ApiDefaults
+import ru.xvmblitz.android.data.api.AccessType
+import ru.xvmblitz.android.data.api.GetSubscriptionPublicPricingResponseDto
+import ru.xvmblitz.android.data.api.GetSubscriptionUserPricingResponseDto
 import ru.xvmblitz.android.data.api.GetUsageResponseDto
 import ru.xvmblitz.android.ui.components.AdaptiveButton
 
@@ -57,14 +61,20 @@ import ru.xvmblitz.android.ui.components.AdaptiveButton
 fun AuthScreen(
     isAuthorized: Boolean,
     usage: GetUsageResponseDto?,
+    subscriptionPricing: GetSubscriptionUserPricingResponseDto?,
+    publicSubscriptionPricing: GetSubscriptionPublicPricingResponseDto?,
     usageError: String?,
+    paymentStatusMessage: String?,
     usageUpdatedAtEpochMs: Long?,
     isUsageLoading: Boolean,
+    isPaymentCreating: Boolean,
+    isPaymentPending: Boolean,
     onBack: () -> Unit,
     onPrepareDebugBaseUrl: (apiBaseUrl: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onAuthorized: () -> Unit,
     onLogout: () -> Unit,
     onRefreshUsage: () -> Unit,
+    onCreateSubscriptionPayment: (onOpenPaymentUrl: (String) -> Unit) -> Unit,
 ) {
     BackHandler(onBack = onBack)
 
@@ -94,10 +104,16 @@ fun AuthScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 usage = usage,
+                subscriptionPricing = subscriptionPricing,
+                publicSubscriptionPricing = publicSubscriptionPricing,
                 usageError = usageError,
+                paymentStatusMessage = paymentStatusMessage,
                 usageUpdatedAtEpochMs = usageUpdatedAtEpochMs,
                 isUsageLoading = isUsageLoading,
+                isPaymentCreating = isPaymentCreating,
+                isPaymentPending = isPaymentPending,
                 onLogout = onLogout,
+                onCreateSubscriptionPayment = onCreateSubscriptionPayment,
             )
         } else {
             LoginContent(
@@ -222,11 +238,18 @@ private fun LoginContent(
 private fun AuthorizedQuotaContent(
     modifier: Modifier = Modifier,
     usage: GetUsageResponseDto?,
+    subscriptionPricing: GetSubscriptionUserPricingResponseDto?,
+    publicSubscriptionPricing: GetSubscriptionPublicPricingResponseDto?,
     usageError: String?,
+    paymentStatusMessage: String?,
     usageUpdatedAtEpochMs: Long?,
     isUsageLoading: Boolean,
+    isPaymentCreating: Boolean,
+    isPaymentPending: Boolean,
     onLogout: () -> Unit,
+    onCreateSubscriptionPayment: (onOpenPaymentUrl: (String) -> Unit) -> Unit,
 ) {
+    val context = LocalContext.current
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     Column(
@@ -234,12 +257,91 @@ private fun AuthorizedQuotaContent(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Статистика использования",
+            text = "Аккаунт и подписка",
             style = MaterialTheme.typography.titleLarge,
         )
 
         if (isUsageLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (usage != null) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Подписка", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = formatAccountType(usage),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(text = formatTariffPrice(usage, subscriptionPricing, publicSubscriptionPricing))
+                    Text(text = formatSubscriptionStatus(subscriptionPricing, usage))
+                }
+            }
+        }
+
+        if (usage != null && (subscriptionPricing != null || publicSubscriptionPricing != null)) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Оплата", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = formatPaymentPrice(subscriptionPricing, publicSubscriptionPricing),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = formatPaymentPeriod(subscriptionPricing, usage),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    )
+                    subscriptionPricing?.let { pricing ->
+                        legacyPriceHint(pricing, publicSubscriptionPricing)?.let { hint ->
+                            Text(
+                                text = hint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            onCreateSubscriptionPayment { url ->
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }
+                        },
+                        enabled = !isPaymentCreating && !isPaymentPending,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (isPaymentCreating || isPaymentPending) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(if (isPaymentCreating) "Создание…" else "Ожидание оплаты…")
+                            }
+                        } else {
+                            Text("Оплатить 1 месяц")
+                        }
+                    }
+                    paymentStatusMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        )
+                    }
+                }
+            }
         }
 
         if (usage != null) {
@@ -273,7 +375,7 @@ private fun AuthorizedQuotaContent(
                 ) {
                     Text("Период действия", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "${formatUsageDate(usage.periodStart)} — ${formatUsageDate(usage.periodEnd)}",
+                        text = formatPeriodRange(usage.periodStart, usage.periodEnd),
                     )
                     remainingPeriodText(usage.periodEnd)?.let { remainingPeriod ->
                         Text(
@@ -344,6 +446,128 @@ private fun AuthorizedQuotaContent(
             },
         )
     }
+}
+
+private fun formatAccountType(usage: GetUsageResponseDto?): String {
+    return when (usage?.type) {
+        AccessType.Free, AccessType.Trial -> "Тариф: Бесплатный"
+        AccessType.FullAccess -> "Тариф: Премиум"
+        null -> "Тариф: -"
+    }
+}
+
+private fun formatTariffPrice(
+    usage: GetUsageResponseDto?,
+    pricing: GetSubscriptionUserPricingResponseDto?,
+    publicPricing: GetSubscriptionPublicPricingResponseDto?,
+): String {
+    if (isFreeOrTrialTariff(usage)) {
+        return "0 ${formatSubscriptionCurrency(pricing?.currency ?: publicPricing?.currency ?: "RUB")} / мес"
+    }
+
+    if (pricing == null) {
+        return ""
+    }
+
+    return "${pricing.amount.toInt()} ${formatSubscriptionCurrency(pricing.currency)} / мес"
+}
+
+private fun formatPaymentPrice(
+    pricing: GetSubscriptionUserPricingResponseDto?,
+    publicPricing: GetSubscriptionPublicPricingResponseDto?,
+): String {
+    pricing?.let {
+        return "${it.amount.toInt()} ${formatSubscriptionCurrency(it.currency)} / мес"
+    }
+
+    publicPricing?.let {
+        return "${it.amount.toInt()} ${formatSubscriptionCurrency(it.currency)} / мес"
+    }
+
+    return ""
+}
+
+private fun legacyPriceHint(
+    pricing: GetSubscriptionUserPricingResponseDto,
+    publicPricing: GetSubscriptionPublicPricingResponseDto?,
+): String? {
+    if (!pricing.isGrandfathered || pricing.legacyPriceUntil.isNullOrBlank() || publicPricing == null) {
+        return null
+    }
+    if (publicPricing.amount == pricing.amount) {
+        return null
+    }
+    return "Льготная цена действует до ${formatUsageDate(pricing.legacyPriceUntil)}. Затем - ${publicPricing.amount.toInt()} ${formatSubscriptionCurrency(publicPricing.currency)} / мес"
+}
+
+private fun isFreeOrTrialTariff(usage: GetUsageResponseDto?): Boolean =
+    usage?.type == AccessType.Free || usage?.type == AccessType.Trial
+
+private fun isPremiumActive(
+    pricing: GetSubscriptionUserPricingResponseDto,
+    usage: GetUsageResponseDto?,
+): Boolean {
+    if (usage?.type != AccessType.FullAccess) {
+        return false
+    }
+
+    val premiumUntilRaw = pricing.premiumUntil
+    if (premiumUntilRaw.isNullOrBlank()) {
+        return true
+    }
+
+    return runCatching {
+        OffsetDateTime.parse(premiumUntilRaw).isAfter(OffsetDateTime.now())
+    }.getOrDefault(false)
+}
+
+private fun formatSubscriptionStatus(
+    pricing: GetSubscriptionUserPricingResponseDto?,
+    usage: GetUsageResponseDto?,
+): String {
+    if (pricing != null && isPremiumActive(pricing, usage)) {
+        return formatPremiumUntil(pricing.premiumUntil)
+    }
+
+    if (isFreeOrTrialTariff(usage) && usage != null) {
+        return "Квота будет обновлена после ${formatUsageDate(usage.periodEnd)}"
+    }
+
+    return formatPremiumUntil(pricing?.premiumUntil)
+}
+
+private fun formatPaymentPeriod(
+    pricing: GetSubscriptionUserPricingResponseDto?,
+    usage: GetUsageResponseDto?,
+): String {
+    if (isFreeOrTrialTariff(usage)) {
+        val periodStart = LocalDate.now()
+        val periodEnd = periodStart.plusMonths(1)
+        return "Оплачиваемый период: ${formatPeriodRange(periodStart, periodEnd)}"
+    }
+
+    if (pricing == null) {
+        return ""
+    }
+
+    return "Следующий оплачиваемый период: ${formatPeriodRange(pricing.nextPaymentPeriod.start, pricing.nextPaymentPeriod.end)}"
+}
+
+private fun formatPeriodRange(start: LocalDate, end: LocalDate): String =
+    "${start.format(usageDateFormatter)}\u00A0-\u00A0${end.format(usageDateFormatter)}"
+
+private fun formatPeriodRange(startRaw: String, endRaw: String): String =
+    "${formatUsageDate(startRaw)}\u00A0-\u00A0${formatUsageDate(endRaw)}"
+
+private fun formatPremiumUntil(premiumUntilRaw: String?): String {
+    if (premiumUntilRaw.isNullOrBlank()) {
+        return "Не оплачена"
+    }
+    return "Оплачена до: ${formatUsageDate(premiumUntilRaw)}"
+}
+
+private fun formatSubscriptionCurrency(currency: String): String {
+    return if (currency.equals("RUB", ignoreCase = true)) "₽" else currency
 }
 
 private val usageDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")

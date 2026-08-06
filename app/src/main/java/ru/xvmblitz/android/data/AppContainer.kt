@@ -22,6 +22,7 @@ import ru.xvmblitz.android.data.api.OpenIdAuthResponseDto
 import ru.xvmblitz.android.data.api.OpenIdRefreshRequestDto
 import ru.xvmblitz.android.data.api.SessionsApi
 import ru.xvmblitz.android.data.api.StatisticsApi
+import ru.xvmblitz.android.data.api.SubscriptionApi
 import ru.xvmblitz.android.data.api.UpdatesApi
 import ru.xvmblitz.android.data.api.UsageApi
 import ru.xvmblitz.android.data.auth.AuthRepository
@@ -124,6 +125,10 @@ class AppContainer(context: Context) {
         private set
 
     @Volatile
+    var subscriptionApi: SubscriptionApi = retrofit.create(SubscriptionApi::class.java)
+        private set
+
+    @Volatile
     var openIdApi: OpenIdApi = retrofit.create(OpenIdApi::class.java)
         private set
 
@@ -162,6 +167,7 @@ class AppContainer(context: Context) {
         retrofit = createRetrofit(normalized)
         statisticsApi = retrofit.create(StatisticsApi::class.java)
         usageApi = retrofit.create(UsageApi::class.java)
+        subscriptionApi = retrofit.create(SubscriptionApi::class.java)
         openIdApi = retrofit.create(OpenIdApi::class.java)
         updatesApi = retrofit.create(UpdatesApi::class.java)
         sessionsApi = retrofit.create(SessionsApi::class.java)
