@@ -131,7 +131,7 @@ fun VoiceInviteBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp)
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF2E7D32))
                 .onGloballyPositioned { coordinates ->
@@ -149,7 +149,7 @@ fun VoiceInviteBar(
             Text(
                 text = "Пригласить во взвод",
                 color = Color.White,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
@@ -157,7 +157,7 @@ fun VoiceInviteBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp)
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0x33FFFFFF))
                 .onGloballyPositioned { coordinates ->
@@ -173,9 +173,10 @@ fun VoiceInviteBar(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "отмена",
+                text = "Отмена",
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
         }
@@ -209,7 +210,7 @@ fun VoiceCallWidget(
     }
     val useExample = configMode && state.phase == VoicePhase.Idle
     val nicks = if (useExample) "Игрок1, Игрок2" else widgetNicknames(state)
-    val countdown = if (useExample) "осталось 1:24" else widgetCountdown(state, nowMs)
+    val countdown = if (useExample) "Осталось 1:24" else widgetCountdown(state, nowMs)
     val titleSize = voiceCallOverlayTitleFontSizeSp(scaleY)
     val fontSize = voiceCallOverlayFontSizeSp(scaleY)
     val horizontalPadding = voiceCallOverlayPaddingHorizontalDp(scaleX, scaleY).dp
@@ -244,7 +245,7 @@ fun VoiceCallWidget(
                 horizontalArrangement = Arrangement.spacedBy(spacing),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                VoiceOverlayButton(
+                VoiceOverlayIconButton(
                     icon = if (state.muted) Icons.Filled.MicOff else Icons.Filled.Mic,
                     tint = if (state.muted) Color(0xFFBDBDBD) else Color.White,
                     label = "Микрофон",
@@ -256,7 +257,7 @@ fun VoiceCallWidget(
                         publishBounds()
                     },
                 )
-                VoiceOverlayButton(
+                VoiceOverlayIconButton(
                     icon = Icons.Filled.CallEnd,
                     tint = Color(0xFFD68585),
                     label = "Сброс",
@@ -276,6 +277,47 @@ fun VoiceCallWidget(
                     .zIndex(2f),
             )
         }
+    }
+}
+
+@Composable
+private fun VoiceOverlayIconButton(
+    icon: ImageVector,
+    tint: Color,
+    label: String,
+    onClick: () -> Unit,
+    onBounds: (RectF) -> Unit,
+    background: Color = Color(0x33FFFFFF),
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(background)
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInRoot()
+                onBounds(RectF(bounds.left, bounds.top, bounds.right, bounds.bottom))
+            }
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -347,12 +389,12 @@ private fun widgetCountdown(state: VoiceUiState, nowMs: Long): String {
     val deadline = state.endsAtMs ?: state.incomingExpiresAtMs
     if (deadline != null) {
         val remaining = ((deadline - nowMs) / 1000L).coerceAtLeast(0L)
-        return "осталось ${formatMmSs(remaining)}"
+        return "Осталось ${formatMmSs(remaining)}"
     }
     return if (state.phase == VoicePhase.OutgoingRinging) {
-        "ожидание ответа…"
+        "Ожидание ответа…"
     } else {
-        "разговор"
+        "Разговор"
     }
 }
 

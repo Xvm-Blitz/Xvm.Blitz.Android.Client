@@ -182,7 +182,7 @@ fun MainScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SettingSwitchRow(
-                    title = "Не беспокоить",
+                    title = "Не беспокоить (голосовой чат)",
                     checked = state.settings.voiceDoNotDisturb,
                     onCheckedChange = onVoiceDoNotDisturbChange,
                 )

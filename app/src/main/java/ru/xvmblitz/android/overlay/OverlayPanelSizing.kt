@@ -28,8 +28,8 @@ const val OverlayBaseVoiceCallHeightDp = 88f
 
 private const val OverlayMinFontScale = 0.55f
 
-const val OverlaySessionSummaryMinScaleX = 0.35f
-const val OverlaySessionSummaryMinScaleY = 0.2f
+const val OverlaySessionSummaryMinScaleX = OverlayMinScaleX
+const val OverlaySessionSummaryMinScaleY = OverlayMinScaleY
 
 fun coerceSessionSummaryScaleX(scale: Float): Float =
     scale.coerceIn(OverlaySessionSummaryMinScaleX, OverlayMaxScaleX)
@@ -76,7 +76,7 @@ fun sessionSummaryOverlayMinWidthDp(scaleX: Float, scaleY: Float): Float =
     OverlayBaseSessionSummaryWidthDp * coerceSessionSummaryScaleX(scaleX) * overlayFontScale(scaleY)
 
 fun sessionSummaryOverlayMinHeightDp(scaleY: Float): Float =
-    OverlayBaseSessionSummaryHeightDp * coerceSessionSummaryScaleY(scaleY)
+    OverlayBaseSessionSummaryHeightDp * overlayFontScale(scaleY)
 
 fun sessionSummaryOverlayScaleXFromWidthDelta(
     initialScaleX: Float,
@@ -85,7 +85,8 @@ fun sessionSummaryOverlayScaleXFromWidthDelta(
     density: Float,
 ): Float {
     val baseWidthPx = OverlayBaseSessionSummaryWidthDp * density
-    val startWidthPx = baseWidthPx * coerceSessionSummaryScaleX(initialScaleX) * overlayFontScale(initialScaleY)
+    val startWidthPx =
+        baseWidthPx * coerceSessionSummaryScaleX(initialScaleX) * overlayFontScale(initialScaleY)
     val newWidthPx = (startWidthPx + widthDelta).coerceAtLeast(1f)
     val denominator = baseWidthPx * overlayFontScale(initialScaleY)
     return coerceSessionSummaryScaleX(newWidthPx / denominator)

@@ -106,6 +106,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private val captureButtonOffScreenDirection =
         MutableStateFlow<CaptureButtonOffScreenDirection?>(null)
     private var fabErrorHideJob: Job? = null
+    private var voiceCallDragging = false
     private val configurationCallbacks = object : ComponentCallbacks {
         override fun onConfigurationChanged(newConfig: Configuration) {
             updateCaptureButtonWindowPosition()
@@ -601,7 +602,10 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             params.y = settings.sessionSummaryOverlayY
             sessionSummaryView?.let { windowManager.updateViewLayout(it, params) }
         }
-        if (settings.voiceCallX != Int.MIN_VALUE && settings.voiceCallY != Int.MIN_VALUE) {
+        if (!voiceCallDragging &&
+            settings.voiceCallX != Int.MIN_VALUE &&
+            settings.voiceCallY != Int.MIN_VALUE
+        ) {
             voiceCallParams?.let { params ->
                 params.x = settings.voiceCallX
                 params.y = settings.voiceCallY
@@ -1181,6 +1185,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     touchX = event.rawX
                     touchY = event.rawY
                     dragging = false
+                    voiceCallDragging = false
                     val preview = previewVoiceCallScale.value
                     initialScaleX = preview?.scaleX ?: currentSettings.voiceCallScaleX
                     initialScaleY = preview?.scaleY ?: currentSettings.voiceCallScaleY
@@ -1207,6 +1212,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                     val dy = event.rawY - touchY
                     if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                         dragging = true
+                        voiceCallDragging = true
                         if (configMode && gesture == PanelGesture.Pending) {
                             gesture = if (candidateGesture == PanelGesture.ResizeBoth) {
                                 PanelGesture.ResizeBoth
@@ -1259,7 +1265,10 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 scope.launch {
                                     XvmBlitzApp.instance.container.settingsRepository
                                         .updateVoiceCallPosition(params.x, params.y)
+                                    voiceCallDragging = false
                                 }
+                            } else {
+                                voiceCallDragging = false
                             }
                         }
                         PanelGesture.ResizeBoth,
@@ -1271,11 +1280,14 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                         .updateVoiceCallScale(preview.scaleX, preview.scaleY)
                                 }
                                 previewVoiceCallScale.value = null
+                                voiceCallDragging = false
                             }
                         }
                         PanelGesture.Pending, PanelGesture.None,
                         PanelGesture.ResizeHorizontal, PanelGesture.ResizeVertical,
-                        -> Unit
+                        -> {
+                            voiceCallDragging = false
+                        }
                     }
                     gesture = PanelGesture.None
                     candidateGesture = PanelGesture.Drag
@@ -1308,11 +1320,11 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun placeVoiceCallWidget() {
         val view = voiceCallView ?: return
         val params = voiceCallParams ?: return
-        if (view.visibility != android.view.View.VISIBLE) {
+        if (view.visibility != android.view.View.VISIBLE || voiceCallDragging) {
             return
         }
         view.post {
-            if (view.visibility != android.view.View.VISIBLE) {
+            if (view.visibility != android.view.View.VISIBLE || voiceCallDragging) {
                 return@post
             }
             val screen = currentScreenSizePx()
@@ -1322,15 +1334,16 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             val height = view.height.coerceAtLeast(1)
             val storedX = currentSettings.voiceCallX
             val storedY = currentSettings.voiceCallY
-            val targetX = if (storedX == Int.MIN_VALUE) {
+            val needsDefault = storedX == Int.MIN_VALUE || storedY == Int.MIN_VALUE
+            val targetX = if (needsDefault) {
                 (screen.width - width - padding).coerceAtLeast(padding)
             } else {
-                storedX
+                params.x
             }
-            val targetY = if (storedY == Int.MIN_VALUE) {
+            val targetY = if (needsDefault) {
                 padding
             } else {
-                storedY
+                params.y
             }
             val (clampedX, clampedY) = clampOverlayPosition(
                 x = targetX,
@@ -1344,7 +1357,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 params.y = clampedY
                 runCatching { windowManager.updateViewLayout(view, params) }
             }
-            if (storedX == Int.MIN_VALUE || storedY == Int.MIN_VALUE) {
+            if (needsDefault) {
                 scope.launch {
                     XvmBlitzApp.instance.container.settingsRepository
                         .updateVoiceCallPosition(params.x, params.y)
