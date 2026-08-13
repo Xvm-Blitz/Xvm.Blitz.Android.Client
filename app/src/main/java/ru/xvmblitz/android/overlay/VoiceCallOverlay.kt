@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 import ru.xvmblitz.android.voice.VoicePhase
 import ru.xvmblitz.android.voice.VoiceUiState
@@ -269,9 +270,10 @@ fun VoiceCallWidget(
             }
         }
         if (configMode) {
-            OverlayResizeCornerHandle(
-                scale = minOf(scaleX, scaleY).coerceIn(0.85f, 1.4f),
-                modifier = Modifier.align(Alignment.BottomEnd),
+            OverlayResizeSquareHandle(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .zIndex(2f),
             )
         }
     }

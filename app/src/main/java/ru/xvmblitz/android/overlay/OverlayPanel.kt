@@ -203,6 +203,18 @@ internal fun OverlayResizeCornerHandle(
 }
 
 @Composable
+internal fun OverlayResizeSquareHandle(
+    modifier: Modifier = Modifier,
+    sizeDp: Float = 22f,
+) {
+    Box(
+        modifier = modifier
+            .size(sizeDp.dp)
+            .background(Color(0xCCFFFFFF), RoundedCornerShape(3.dp)),
+    )
+}
+
+@Composable
 private fun PanelCornerHandle(
     scale: Float,
     modifier: Modifier = Modifier,

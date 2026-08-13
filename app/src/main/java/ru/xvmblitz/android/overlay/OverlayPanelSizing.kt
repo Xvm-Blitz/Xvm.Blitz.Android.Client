@@ -72,6 +72,12 @@ fun sessionSummaryOverlayPaddingVerticalDp(scaleY: Float): Float =
 fun sessionSummaryOverlaySpacingDp(scaleX: Float, scaleY: Float): Float =
     OverlayBaseSessionSummarySpacingDp * coerceSessionSummaryScaleX(scaleX) * overlayFontScale(scaleY)
 
+fun sessionSummaryOverlayMinWidthDp(scaleX: Float, scaleY: Float): Float =
+    OverlayBaseSessionSummaryWidthDp * coerceSessionSummaryScaleX(scaleX) * overlayFontScale(scaleY)
+
+fun sessionSummaryOverlayMinHeightDp(scaleY: Float): Float =
+    OverlayBaseSessionSummaryHeightDp * coerceSessionSummaryScaleY(scaleY)
+
 fun sessionSummaryOverlayScaleXFromWidthDelta(
     initialScaleX: Float,
     initialScaleY: Float,
