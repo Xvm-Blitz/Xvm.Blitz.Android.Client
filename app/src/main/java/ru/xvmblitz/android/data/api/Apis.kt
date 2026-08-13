@@ -56,3 +56,8 @@ interface UpdatesApi {
         @Query("platform") platform: ClientPlatform,
     ): GetAppUpdateResponseDto
 }
+
+interface VoiceApi {
+    @GET("v1/voice/ice-servers")
+    suspend fun getIceServers(): VoiceIceServersResponseDto
+}

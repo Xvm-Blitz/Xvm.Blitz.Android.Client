@@ -50,12 +50,16 @@ import kotlinx.coroutines.launch
 import ru.xvmblitz.android.R
 import ru.xvmblitz.android.XvmBlitzApp
 import ru.xvmblitz.android.capture.CaptureRequestActivity
+import ru.xvmblitz.android.data.api.XvmUsageStatus
 import ru.xvmblitz.android.data.settings.AppSettings
 import ru.xvmblitz.android.domain.BattleStatisticsStore
 import ru.xvmblitz.android.domain.BattleUiState
+import ru.xvmblitz.android.domain.PlayerSlot
 import ru.xvmblitz.android.ui.MainActivity
 import ru.xvmblitz.android.ui.theme.XvmBlitzTheme
 import ru.xvmblitz.android.util.AppAlertNotifier
+import ru.xvmblitz.android.voice.VoicePhase
+import ru.xvmblitz.android.voice.VoiceUiState
 import kotlin.math.abs
 
 class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
@@ -69,19 +73,34 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private var captureButtonView: ComposeView? = null
     private var directionHintView: ComposeView? = null
     private var sessionSummaryView: ComposeView? = null
+    private var incomingCallView: ComposeView? = null
+    private var voiceCallView: ComposeView? = null
+    private var inviteBarView: ComposeView? = null
     private var alliesParams: WindowManager.LayoutParams? = null
     private var enemiesParams: WindowManager.LayoutParams? = null
     private var captureButtonParams: WindowManager.LayoutParams? = null
     private var directionHintParams: WindowManager.LayoutParams? = null
     private var sessionSummaryParams: WindowManager.LayoutParams? = null
+    private var incomingCallParams: WindowManager.LayoutParams? = null
+    private var voiceCallParams: WindowManager.LayoutParams? = null
+    private var inviteBarParams: WindowManager.LayoutParams? = null
     private var collectJob: Job? = null
     private var currentSettings = AppSettings()
     private var currentBattle = BattleUiState()
+    private var currentVoice = VoiceUiState()
     private var hiddenForCapture = false
+    private var microphoneForeground = false
+    private val alliesHitTester = OverlayInteractiveHitTester()
+    private val enemiesHitTester = OverlayInteractiveHitTester()
+    private val incomingCallHitTester = OverlayInteractiveHitTester()
+    private val voiceCallHitTester = OverlayInteractiveHitTester()
+    private val inviteBarHitTester = OverlayInteractiveHitTester()
+    private val selectedCallPlayerId = MutableStateFlow<Long?>(null)
     private var captureButtonOriginOffsetX = 0
     private var captureButtonOriginOffsetY = 0
     private val previewPanelScale = MutableStateFlow<PanelScalePreview?>(null)
     private val previewSessionSummaryScale = MutableStateFlow<PanelScalePreview?>(null)
+    private val previewVoiceCallScale = MutableStateFlow<PanelScalePreview?>(null)
     private val fabErrorPulse = MutableStateFlow(0)
     private val fabErrorMessage = MutableStateFlow<String?>(null)
     private val captureButtonOffScreenDirection =
@@ -123,12 +142,31 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             launch {
                 container.battleStatisticsStore.state.collectLatest { battle ->
                     currentBattle = battle
+                    if (!battle.hasBattle) {
+                        selectedCallPlayerId.value = null
+                    }
                     renderPanels()
                 }
             }
             launch {
                 container.sessionSummaryStore.overlay.collectLatest {
                     sessionSummaryView?.invalidate()
+                }
+            }
+            launch {
+                container.voiceRuntimeService.state.collectLatest { voice ->
+                    currentVoice = voice
+                    updateForegroundMicrophone(voice.capturingAudio)
+                    renderPanels()
+                    incomingCallView?.invalidate()
+                    voiceCallView?.invalidate()
+                    inviteBarView?.invalidate()
+                }
+            }
+            launch {
+                selectedCallPlayerId.collectLatest {
+                    renderPanels()
+                    inviteBarView?.invalidate()
                 }
             }
         }
@@ -222,6 +260,51 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 windowManager.addView(view, sessionSummaryParams)
             }
         }
+        if (incomingCallView == null) {
+            incomingCallParams = createLayoutParams(0, 24)
+            incomingCallView = createComposeOverlayView { IncomingCallOverlayContent() }.also { view ->
+                view.setOnTouchListener { _, event ->
+                    if (incomingCallHitTester.contains(event.x, event.y)) {
+                        false
+                    } else {
+                        true
+                    }
+                }
+                view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    placeIncomingCallBanner()
+                }
+                windowManager.addView(view, incomingCallParams)
+            }
+        }
+        if (voiceCallView == null) {
+            voiceCallParams = createLayoutParams(
+                currentSettings.voiceCallX.takeIf { value -> value != Int.MIN_VALUE } ?: 0,
+                currentSettings.voiceCallY.takeIf { value -> value != Int.MIN_VALUE } ?: 0,
+            )
+            voiceCallView = createComposeOverlayView { VoiceCallOverlayContent() }.also { view ->
+                attachVoiceCallDrag(view)
+                view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    placeVoiceCallWidget()
+                }
+                windowManager.addView(view, voiceCallParams)
+            }
+        }
+        if (inviteBarView == null) {
+            inviteBarParams = createLayoutParams(0, 24)
+            inviteBarView = createComposeOverlayView { InviteOverlayContent() }.also { view ->
+                view.setOnTouchListener { _, event ->
+                    if (inviteBarHitTester.contains(event.x, event.y)) {
+                        false
+                    } else {
+                        true
+                    }
+                }
+                view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                    placeInviteBar()
+                }
+                windowManager.addView(view, inviteBarParams)
+            }
+        }
         renderPanels()
     }
 
@@ -291,6 +374,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun AlliesOverlayContent() {
         val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
         val battle by XvmBlitzApp.instance.container.battleStatisticsStore.state.collectAsState()
+        val voice by XvmBlitzApp.instance.container.voiceRuntimeService.state.collectAsState()
+        val selectedId by selectedCallPlayerId.collectAsState()
         val previewScale by previewPanelScale.collectAsState()
         val showPanels = settings.overlayVisible && (battle.hasBattle || settings.configMode)
         if (!showPanels) {
@@ -302,6 +387,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             scaleY = previewScale?.scaleY ?: settings.panelScaleY,
             configMode = settings.configMode,
             mirroredColumns = false,
+            selectedPlayerId = selectedId,
+            callAction = { player -> voiceRowCallAction(player, voice) },
+            hitTester = alliesHitTester,
         )
     }
 
@@ -309,6 +397,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun EnemiesOverlayContent() {
         val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
         val battle by XvmBlitzApp.instance.container.battleStatisticsStore.state.collectAsState()
+        val voice by XvmBlitzApp.instance.container.voiceRuntimeService.state.collectAsState()
+        val selectedId by selectedCallPlayerId.collectAsState()
         val previewScale by previewPanelScale.collectAsState()
         val showPanels = settings.overlayVisible && (battle.hasBattle || settings.configMode)
         if (!showPanels) {
@@ -320,6 +410,68 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             scaleY = previewScale?.scaleY ?: settings.panelScaleY,
             configMode = settings.configMode,
             mirroredColumns = true,
+            selectedPlayerId = selectedId,
+            callAction = { player -> voiceRowCallAction(player, voice) },
+            hitTester = enemiesHitTester,
+        )
+    }
+
+    @Composable
+    private fun IncomingCallOverlayContent() {
+        val voice by XvmBlitzApp.instance.container.voiceRuntimeService.state.collectAsState()
+        if (!voice.showIncomingBanner) {
+            return
+        }
+        VoiceIncomingBanner(
+            state = voice,
+            onAccept = { XvmBlitzApp.instance.container.voiceRuntimeService.acceptIncoming() },
+            onReject = { XvmBlitzApp.instance.container.voiceRuntimeService.rejectIncoming() },
+            hitTester = incomingCallHitTester,
+        )
+    }
+
+    @Composable
+    private fun VoiceCallOverlayContent() {
+        val settings by XvmBlitzApp.instance.container.settingsRepository.settings.collectAsState(initial = currentSettings)
+        val voice by XvmBlitzApp.instance.container.voiceRuntimeService.state.collectAsState()
+        val preview by previewVoiceCallScale.collectAsState()
+        if (!voice.showCallWidget && !settings.configMode) {
+            return
+        }
+        val scaleX = preview?.scaleX ?: settings.voiceCallScaleX
+        val scaleY = preview?.scaleY ?: settings.voiceCallScaleY
+        VoiceCallWidget(
+            state = voice,
+            onToggleMute = { XvmBlitzApp.instance.container.voiceRuntimeService.toggleMute() },
+            onHangup = { XvmBlitzApp.instance.container.voiceRuntimeService.hangup() },
+            hitTester = voiceCallHitTester,
+            scaleX = scaleX,
+            scaleY = scaleY,
+            configMode = settings.configMode,
+        )
+    }
+
+    @Composable
+    private fun InviteOverlayContent() {
+        val selectedId by selectedCallPlayerId.collectAsState()
+        val battle by XvmBlitzApp.instance.container.battleStatisticsStore.state.collectAsState()
+        val voice by XvmBlitzApp.instance.container.voiceRuntimeService.state.collectAsState()
+        val player = (battle.allies + battle.enemies)
+            .firstOrNull { slot -> slot.id == selectedId }
+            ?.takeIf { slot -> voiceRowCallAction(slot, voice) == OverlayCallActionKind.Invite }
+            ?: return
+        val playerId = player.id ?: return
+        VoiceInviteBar(
+            nickname = formatNicknameWithClan(player, mirrored = false),
+            onInvite = {
+                selectedCallPlayerId.value = null
+                XvmBlitzApp.instance.container.voiceRuntimeService.invite(
+                    playerId,
+                    player.xvmUsage == XvmUsageStatus.Currently,
+                )
+            },
+            onDismiss = { selectedCallPlayerId.value = null },
+            hitTester = inviteBarHitTester,
         )
     }
 
@@ -365,6 +517,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             enemiesView?.visibility = android.view.View.GONE
             captureButtonView?.visibility = android.view.View.GONE
             sessionSummaryView?.visibility = android.view.View.GONE
+            incomingCallView?.visibility = android.view.View.GONE
+            voiceCallView?.visibility = android.view.View.GONE
+            inviteBarView?.visibility = android.view.View.GONE
         } else {
             renderPanels()
         }
@@ -384,6 +539,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             captureButtonView?.visibility = android.view.View.GONE
             directionHintView?.visibility = android.view.View.GONE
             sessionSummaryView?.visibility = android.view.View.GONE
+            incomingCallView?.visibility = android.view.View.GONE
+            voiceCallView?.visibility = android.view.View.GONE
+            inviteBarView?.visibility = android.view.View.GONE
             return
         }
 
@@ -392,6 +550,12 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         val showCaptureButton = currentSettings.overlayVisible && !showPanels
         val showSessionSummary = currentSettings.overlayVisible &&
             (currentSettings.sessionSummaryOverlayVisible || currentSettings.configMode)
+        val showIncoming = currentVoice.showIncomingBanner
+        val showVoiceCall = currentVoice.showCallWidget || currentSettings.configMode
+        val showInvite = showPanels &&
+            !currentSettings.configMode &&
+            !showIncoming &&
+            selectedInvitePlayer() != null
         alliesView?.visibility =
             if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
         enemiesView?.visibility =
@@ -400,8 +564,23 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             if (showCaptureButton) android.view.View.VISIBLE else android.view.View.GONE
         sessionSummaryView?.visibility =
             if (showSessionSummary) android.view.View.VISIBLE else android.view.View.GONE
+        incomingCallView?.visibility =
+            if (showIncoming) android.view.View.VISIBLE else android.view.View.GONE
+        voiceCallView?.visibility =
+            if (showVoiceCall) android.view.View.VISIBLE else android.view.View.GONE
+        inviteBarView?.visibility =
+            if (showInvite) android.view.View.VISIBLE else android.view.View.GONE
         if (showSessionSummary) {
             updateSessionSummaryOverlayLayout(adjustScale = true)
+        }
+        if (showIncoming) {
+            placeIncomingCallBanner()
+        }
+        if (showVoiceCall) {
+            placeVoiceCallWidget()
+        }
+        if (showInvite) {
+            placeInviteBar()
         }
         updateCaptureButtonDirectionHint()
     }
@@ -421,6 +600,13 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             params.x = settings.sessionSummaryOverlayX
             params.y = settings.sessionSummaryOverlayY
             sessionSummaryView?.let { windowManager.updateViewLayout(it, params) }
+        }
+        if (settings.voiceCallX != Int.MIN_VALUE && settings.voiceCallY != Int.MIN_VALUE) {
+            voiceCallParams?.let { params ->
+                params.x = settings.voiceCallX
+                params.y = settings.voiceCallY
+                voiceCallView?.let { windowManager.updateViewLayout(it, params) }
+            }
         }
         updateCaptureButtonWindowPosition()
         renderPanels()
@@ -677,7 +863,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                         } else {
                             (OverlayBaseSessionSummaryHeightDp * density * initialScaleY).toInt()
                         }
-                        resolvePanelGesture(event.x, event.y, width, height, density)
+                        resolveCornerResizeGesture(event.x, event.y, width, height, density)
                     } else {
                         PanelGesture.Drag
                     }
@@ -703,13 +889,10 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                         longPressJob?.cancel()
                         dragging = true
                         if (configMode && gesture == PanelGesture.Pending) {
-                            gesture = when (candidateGesture) {
-                                PanelGesture.ResizeHorizontal ->
-                                    if (abs(dx) >= abs(dy)) PanelGesture.ResizeHorizontal else PanelGesture.Drag
-                                PanelGesture.ResizeVertical ->
-                                    if (abs(dy) >= abs(dx)) PanelGesture.ResizeVertical else PanelGesture.Drag
-                                PanelGesture.ResizeBoth -> PanelGesture.ResizeBoth
-                                else -> PanelGesture.Drag
+                            gesture = if (candidateGesture == PanelGesture.ResizeBoth) {
+                                PanelGesture.ResizeBoth
+                            } else {
+                                PanelGesture.Drag
                             }
                         } else if (!configMode) {
                             gesture = PanelGesture.Drag
@@ -720,27 +903,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                             params.x = initialX + dx.toInt()
                             params.y = initialY + dy.toInt()
                             windowManager.updateViewLayout(view, params)
-                        }
-                        PanelGesture.ResizeHorizontal -> {
-                            previewSessionSummaryScale.value = PanelScalePreview(
-                                scaleX = sessionSummaryOverlayScaleXFromWidthDelta(
-                                    initialScaleX,
-                                    initialScaleY,
-                                    dx,
-                                    density,
-                                ),
-                                scaleY = initialScaleY,
-                            )
-                        }
-                        PanelGesture.ResizeVertical -> {
-                            previewSessionSummaryScale.value = PanelScalePreview(
-                                scaleX = initialScaleX,
-                                scaleY = sessionSummaryOverlayScaleYFromHeightDelta(
-                                    initialScaleY,
-                                    dy,
-                                    density,
-                                ),
-                            )
                         }
                         PanelGesture.ResizeBoth -> {
                             previewSessionSummaryScale.value = PanelScalePreview(
@@ -757,7 +919,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                 ),
                             )
                         }
-                        PanelGesture.Pending, PanelGesture.None -> Unit
+                        PanelGesture.Pending, PanelGesture.None,
+                        PanelGesture.ResizeHorizontal, PanelGesture.ResizeVertical,
+                        -> Unit
                     }
                     true
                 }
@@ -773,8 +937,6 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                     }
                                 }
                             }
-                            PanelGesture.ResizeHorizontal,
-                            PanelGesture.ResizeVertical,
                             PanelGesture.ResizeBoth,
                             -> {
                                 val preview = previewSessionSummaryScale.value
@@ -786,7 +948,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                                     previewSessionSummaryScale.value = null
                                 }
                             }
-                            PanelGesture.Pending, PanelGesture.None -> Unit
+                            PanelGesture.Pending, PanelGesture.None,
+                            PanelGesture.ResizeHorizontal, PanelGesture.ResizeVertical,
+                            -> Unit
                         }
                     }
                     gesture = PanelGesture.None
@@ -825,6 +989,8 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         var initialY = 0
         var touchX = 0f
         var touchY = 0f
+        var downViewX = 0f
+        var downViewY = 0f
         var initialScaleX = 1f
         var initialScaleY = 1f
         var candidateGesture = PanelGesture.Drag
@@ -845,10 +1011,15 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    if (!configMode && hitTesterFor(kind).contains(event.x, event.y)) {
+                        return@setOnTouchListener false
+                    }
                     initialX = params.x
                     initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
+                    downViewX = event.x
+                    downViewY = event.y
                     dragging = false
                     longPressTriggered = false
                     val preview = previewPanelScale.value
@@ -897,6 +1068,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                             params.x = initialX + dx.toInt()
                             params.y = initialY + dy.toInt()
                             windowManager.updateViewLayout(view, params)
+                            placeInviteBar()
                         }
                         PanelGesture.ResizeHorizontal -> {
                             previewPanelScale.value = PanelScalePreview(
@@ -922,6 +1094,18 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     longPressJob?.cancel()
+                    if (event.actionMasked == MotionEvent.ACTION_UP &&
+                        !longPressTriggered &&
+                        !dragging &&
+                        !configMode
+                    ) {
+                        val tappedId = hitTesterFor(kind).playerAt(downViewX, downViewY)
+                        selectedCallPlayerId.value = if (tappedId != null && tappedId == selectedCallPlayerId.value) {
+                            null
+                        } else {
+                            tappedId
+                        }
+                    }
                     if (!longPressTriggered) {
                         when (gesture) {
                             PanelGesture.Drag -> {
@@ -964,6 +1148,292 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
     }
 
+    private fun hitTesterFor(kind: PanelKind): OverlayInteractiveHitTester {
+        return when (kind) {
+            PanelKind.Allies -> alliesHitTester
+            PanelKind.Enemies -> enemiesHitTester
+        }
+    }
+
+    private fun attachVoiceCallDrag(view: ComposeView) {
+        var initialX = 0
+        var initialY = 0
+        var touchX = 0f
+        var touchY = 0f
+        var initialScaleX = 1f
+        var initialScaleY = 1f
+        var candidateGesture = PanelGesture.Drag
+        var gesture = PanelGesture.None
+        var dragging = false
+        val density = resources.displayMetrics.density
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+
+        view.setOnTouchListener { _, event ->
+            val params = voiceCallParams ?: return@setOnTouchListener false
+            val configMode = currentSettings.configMode
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    if (!configMode && voiceCallHitTester.contains(event.x, event.y)) {
+                        return@setOnTouchListener false
+                    }
+                    initialX = params.x
+                    initialY = params.y
+                    touchX = event.rawX
+                    touchY = event.rawY
+                    dragging = false
+                    val preview = previewVoiceCallScale.value
+                    initialScaleX = preview?.scaleX ?: currentSettings.voiceCallScaleX
+                    initialScaleY = preview?.scaleY ?: currentSettings.voiceCallScaleY
+                    candidateGesture = if (configMode) {
+                        val width = if (view.width > 0) {
+                            view.width
+                        } else {
+                            (OverlayBaseVoiceCallWidthDp * density * initialScaleX).toInt()
+                        }
+                        val height = if (view.height > 0) {
+                            view.height
+                        } else {
+                            (OverlayBaseVoiceCallHeightDp * density * initialScaleY).toInt()
+                        }
+                        resolveCornerResizeGesture(event.x, event.y, width, height, density)
+                    } else {
+                        PanelGesture.Drag
+                    }
+                    gesture = if (configMode) PanelGesture.Pending else PanelGesture.None
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        dragging = true
+                        if (configMode && gesture == PanelGesture.Pending) {
+                            gesture = if (candidateGesture == PanelGesture.ResizeBoth) {
+                                PanelGesture.ResizeBoth
+                            } else {
+                                PanelGesture.Drag
+                            }
+                        } else if (!configMode) {
+                            gesture = PanelGesture.Drag
+                        }
+                    }
+                    when (gesture) {
+                        PanelGesture.Drag -> {
+                            val screen = currentScreenSizePx()
+                            val (clampedX, clampedY) = clampOverlayPosition(
+                                x = initialX + dx.toInt(),
+                                y = initialY + dy.toInt(),
+                                viewWidth = view.width.coerceAtLeast(1),
+                                viewHeight = view.height.coerceAtLeast(1),
+                                screen = screen,
+                            )
+                            params.x = clampedX
+                            params.y = clampedY
+                            windowManager.updateViewLayout(view, params)
+                        }
+                        PanelGesture.ResizeBoth -> {
+                            previewVoiceCallScale.value = PanelScalePreview(
+                                scaleX = voiceCallOverlayScaleXFromWidthDelta(
+                                    initialScaleX,
+                                    initialScaleY,
+                                    dx,
+                                    density,
+                                ),
+                                scaleY = voiceCallOverlayScaleYFromHeightDelta(
+                                    initialScaleY,
+                                    dy,
+                                    density,
+                                ),
+                            )
+                        }
+                        PanelGesture.Pending, PanelGesture.None,
+                        PanelGesture.ResizeHorizontal, PanelGesture.ResizeVertical,
+                        -> Unit
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    when (gesture) {
+                        PanelGesture.Drag -> {
+                            if (dragging) {
+                                scope.launch {
+                                    XvmBlitzApp.instance.container.settingsRepository
+                                        .updateVoiceCallPosition(params.x, params.y)
+                                }
+                            }
+                        }
+                        PanelGesture.ResizeBoth,
+                        -> {
+                            val preview = previewVoiceCallScale.value
+                            scope.launch {
+                                if (preview != null) {
+                                    XvmBlitzApp.instance.container.settingsRepository
+                                        .updateVoiceCallScale(preview.scaleX, preview.scaleY)
+                                }
+                                previewVoiceCallScale.value = null
+                            }
+                        }
+                        PanelGesture.Pending, PanelGesture.None,
+                        PanelGesture.ResizeHorizontal, PanelGesture.ResizeVertical,
+                        -> Unit
+                    }
+                    gesture = PanelGesture.None
+                    candidateGesture = PanelGesture.Drag
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun placeIncomingCallBanner() {
+        val view = incomingCallView ?: return
+        val params = incomingCallParams ?: return
+        if (view.visibility != android.view.View.VISIBLE) {
+            return
+        }
+        view.post {
+            if (view.visibility != android.view.View.VISIBLE) {
+                return@post
+            }
+            val screen = currentScreenSizePx()
+            val density = resources.displayMetrics.density
+            val width = view.width.coerceAtLeast(1)
+            params.x = ((screen.width - width) / 2).coerceAtLeast(0)
+            params.y = (12 * density).toInt()
+            runCatching { windowManager.updateViewLayout(view, params) }
+        }
+    }
+
+    private fun placeVoiceCallWidget() {
+        val view = voiceCallView ?: return
+        val params = voiceCallParams ?: return
+        if (view.visibility != android.view.View.VISIBLE) {
+            return
+        }
+        view.post {
+            if (view.visibility != android.view.View.VISIBLE) {
+                return@post
+            }
+            val screen = currentScreenSizePx()
+            val density = resources.displayMetrics.density
+            val padding = (12 * density).toInt()
+            val width = view.width.coerceAtLeast(1)
+            val height = view.height.coerceAtLeast(1)
+            val storedX = currentSettings.voiceCallX
+            val storedY = currentSettings.voiceCallY
+            val targetX = if (storedX == Int.MIN_VALUE) {
+                (screen.width - width - padding).coerceAtLeast(padding)
+            } else {
+                storedX
+            }
+            val targetY = if (storedY == Int.MIN_VALUE) {
+                padding
+            } else {
+                storedY
+            }
+            val (clampedX, clampedY) = clampOverlayPosition(
+                x = targetX,
+                y = targetY,
+                viewWidth = width,
+                viewHeight = height,
+                screen = screen,
+            )
+            if (clampedX != params.x || clampedY != params.y) {
+                params.x = clampedX
+                params.y = clampedY
+                runCatching { windowManager.updateViewLayout(view, params) }
+            }
+            if (storedX == Int.MIN_VALUE || storedY == Int.MIN_VALUE) {
+                scope.launch {
+                    XvmBlitzApp.instance.container.settingsRepository
+                        .updateVoiceCallPosition(params.x, params.y)
+                }
+            }
+        }
+    }
+
+    private fun selectedInvitePlayer(): PlayerSlot? {
+        val selectedId = selectedCallPlayerId.value ?: return null
+        val player = currentBattle.allies.firstOrNull { slot -> slot.id == selectedId }
+            ?: currentBattle.enemies.firstOrNull { slot -> slot.id == selectedId }
+            ?: return null
+        return player.takeIf { slot -> voiceRowCallAction(slot, currentVoice) == OverlayCallActionKind.Invite }
+    }
+
+    private fun placeInviteBar() {
+        val view = inviteBarView ?: return
+        val params = inviteBarParams ?: return
+        if (view.visibility != android.view.View.VISIBLE) {
+            return
+        }
+        view.post {
+            if (view.visibility != android.view.View.VISIBLE) {
+                return@post
+            }
+            val selectedId = selectedCallPlayerId.value
+            val isAllies = currentBattle.allies.any { slot -> slot.id == selectedId }
+            val panelView = if (isAllies) alliesView else enemiesView
+            val panelParams = if (isAllies) alliesParams else enemiesParams
+            if (panelView == null || panelParams == null) {
+                return@post
+            }
+            val screen = currentScreenSizePx()
+            val density = resources.displayMetrics.density
+            val gap = (8 * density).toInt()
+            val width = view.width.coerceAtLeast(1)
+            val height = view.height.coerceAtLeast(1)
+            var x = panelParams.x
+            var y = panelParams.y + panelView.height + gap
+            if (y + height > screen.height) {
+                y = panelParams.y - height - gap
+            }
+            val (clampedX, clampedY) = clampOverlayPosition(
+                x = x,
+                y = y,
+                viewWidth = width,
+                viewHeight = height,
+                screen = screen,
+            )
+            if (clampedX != params.x || clampedY != params.y) {
+                params.x = clampedX
+                params.y = clampedY
+                runCatching { windowManager.updateViewLayout(view, params) }
+            }
+        }
+    }
+
+    private fun updateForegroundMicrophone(enabled: Boolean) {
+        if (microphoneForeground == enabled) {
+            return
+        }
+        microphoneForeground = enabled
+        startAsForeground()
+    }
+
+    private fun voiceRowCallAction(player: PlayerSlot, voice: VoiceUiState): OverlayCallActionKind {
+        if (player.isMissing) {
+            return OverlayCallActionKind.Hidden
+        }
+        val playerId = player.id ?: return OverlayCallActionKind.Hidden
+        if (playerId == voice.selfPlayerId) {
+            return OverlayCallActionKind.Hidden
+        }
+        if (!voice.isLocalPremium) {
+            return OverlayCallActionKind.Hidden
+        }
+        if (playerId in voice.memberIds) {
+            return OverlayCallActionKind.Hidden
+        }
+        if (voice.phase == VoicePhase.InCall && voice.memberIds.size >= voice.maxParticipants) {
+            return OverlayCallActionKind.Hidden
+        }
+        if (voice.outgoingTargetPlayerId == playerId) {
+            return OverlayCallActionKind.Hidden
+        }
+        return OverlayCallActionKind.Invite
+    }
+
     private fun showPanelContextMenu(anchor: View) {
         val params = when (anchor) {
             alliesView -> alliesParams
@@ -998,6 +1468,20 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
         runCatching { windowManager.updateViewLayout(view, params) }
+    }
+
+    private fun resolveCornerResizeGesture(
+        touchX: Float,
+        touchY: Float,
+        width: Int,
+        height: Int,
+        density: Float,
+    ): PanelGesture {
+        val cornerPx = OverlayResizeHandleDp * density
+        val inCorner =
+            touchX >= width - cornerPx &&
+                touchY >= height - cornerPx
+        return if (inCorner) PanelGesture.ResizeBoth else PanelGesture.Drag
     }
 
     private fun resolvePanelGesture(
@@ -1073,16 +1557,25 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         captureButtonView?.let { runCatching { windowManager.removeView(it) } }
         directionHintView?.let { runCatching { windowManager.removeView(it) } }
         sessionSummaryView?.let { runCatching { windowManager.removeView(it) } }
+        incomingCallView?.let { runCatching { windowManager.removeView(it) } }
+        voiceCallView?.let { runCatching { windowManager.removeView(it) } }
+        inviteBarView?.let { runCatching { windowManager.removeView(it) } }
         alliesView = null
         enemiesView = null
         captureButtonView = null
         directionHintView = null
         sessionSummaryView = null
+        incomingCallView = null
+        voiceCallView = null
+        inviteBarView = null
         alliesParams = null
         enemiesParams = null
         captureButtonParams = null
         directionHintParams = null
         sessionSummaryParams = null
+        incomingCallParams = null
+        voiceCallParams = null
+        inviteBarParams = null
     }
 
     private data class ScreenSizePx(
@@ -1120,10 +1613,20 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val hasMicPermission = ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val types = if (microphoneForeground && hasMicPermission) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            }
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                types,
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)

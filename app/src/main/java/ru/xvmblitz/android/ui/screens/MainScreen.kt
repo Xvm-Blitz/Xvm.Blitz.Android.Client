@@ -50,6 +50,7 @@ fun MainScreen(
     onConfigModeChange: (Boolean) -> Unit,
     onOverlayVisibleChange: (Boolean) -> Unit,
     onResetOverlayPositions: () -> Unit,
+    onVoiceDoNotDisturbChange: (Boolean) -> Unit,
     onSelectSession: (ru.xvmblitz.android.ui.session.SessionListItem?) -> Unit,
     onStartSession: () -> Unit,
     onRestoreSessions: () -> Unit,
@@ -170,7 +171,7 @@ fun MainScreen(
                 )
                 if (state.settings.configMode) {
                     Text(
-                        text = "Экран зафиксирован горизонтально. Перетащите панели и оверлей суммаризации. Угол и края меняют размер.",
+                        text = "Экран зафиксирован горизонтально. Перетащите панели, оверлей суммаризации и виджет звонка. Угол меняет ширину и шрифт. У панелей боя также работают края. Настройки сохраняются сразу.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -179,6 +180,11 @@ fun MainScreen(
                     text = "Сбросить координаты",
                     onClick = onResetOverlayPositions,
                     modifier = Modifier.fillMaxWidth(),
+                )
+                SettingSwitchRow(
+                    title = "Не беспокоить",
+                    checked = state.settings.voiceDoNotDisturb,
+                    onCheckedChange = onVoiceDoNotDisturbChange,
                 )
             }
         }

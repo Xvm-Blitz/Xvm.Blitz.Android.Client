@@ -10,12 +10,14 @@ import ru.xvmblitz.android.data.api.XvmUsageStatus
 data class PlayerSlot(
     val tableNumber: Int,
     val isMissing: Boolean,
+    val id: Long? = null,
     val nickname: String? = null,
     val clanTag: String? = null,
     val tank: String? = null,
     val numberOfBattles: Int? = null,
     val winRate: Double? = null,
     val xvmUsage: XvmUsageStatus = XvmUsageStatus.Never,
+    val doNotDisturb: Boolean = false,
 )
 
 data class BattleUiState(
@@ -51,12 +53,14 @@ class BattleStatisticsStore {
                 PlayerSlot(
                     tableNumber = tableNumber,
                     isMissing = false,
+                    id = player.id,
                     nickname = player.nickname,
                     clanTag = player.clanTag?.takeIf { tag -> tag.isNotBlank() },
                     tank = player.tank ?: "неизвестный танк",
                     numberOfBattles = player.numberOfBattles,
                     winRate = player.winRatePercents,
                     xvmUsage = player.xvmUsage,
+                    doNotDisturb = player.doNotDisturb,
                 )
             }
         }
@@ -69,6 +73,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 0,
                 isMissing = false,
+                id = 1001L,
                 nickname = "ИгрокСОченьДлиннымИменем",
                 clanTag = "XVM",
                 tank = "Т-54 первый образец великолепный",
@@ -97,11 +102,13 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 3,
                 isMissing = false,
+                id = 1004L,
                 nickname = "ВысокийРейтинг",
                 tank = "ИС-7",
                 numberOfBattles = 1001,
                 winRate = 65.92,
                 xvmUsage = XvmUsageStatus.Currently,
+                doNotDisturb = true,
             ),
             PlayerSlot(
                 tableNumber = 4,
@@ -135,6 +142,7 @@ class BattleStatisticsStore {
             PlayerSlot(
                 tableNumber = 0,
                 isMissing = false,
+                id = 2001L,
                 nickname = "VeryLongEnemyName1234567",
                 clanTag = "BAD",
                 tank = "Maus with long description",

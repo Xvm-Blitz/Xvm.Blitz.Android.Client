@@ -1,5 +1,6 @@
 package ru.xvmblitz.android.overlay
 
+import android.graphics.RectF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,6 +27,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -37,6 +43,11 @@ import androidx.compose.ui.unit.sp
 import ru.xvmblitz.android.data.api.XvmUsageStatus
 import ru.xvmblitz.android.domain.PlayerSlot
 
+enum class OverlayCallActionKind {
+    Hidden,
+    Invite,
+}
+
 @Composable
 fun OverlayPanel(
     players: List<PlayerSlot>,
@@ -44,6 +55,9 @@ fun OverlayPanel(
     scaleY: Float,
     configMode: Boolean = false,
     mirroredColumns: Boolean = false,
+    selectedPlayerId: Long? = null,
+    callAction: (PlayerSlot) -> OverlayCallActionKind = { OverlayCallActionKind.Hidden },
+    hitTester: OverlayInteractiveHitTester? = null,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -52,6 +66,9 @@ fun OverlayPanel(
     val fontSizeSp = overlayFontSizeSp(heightScale)
     val fontScale = fontSizeSp / OverlayBaseFontSizeSp
     val rowScaleX = widthScale * fontScale
+    val includeSelectable = !configMode && players.any { player ->
+        callAction(player) != OverlayCallActionKind.Hidden
+    }
     val panelWidthDp = OverlayBasePanelWidthDp * widthScale * fontScale
     val panelWidth = panelWidthDp.dp
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
@@ -64,7 +81,16 @@ fun OverlayPanel(
         fontSizeSp = fontSizeSp,
         rowScaleX = rowScaleX,
         statusDotScale = statusDotScale,
+        includeCallAction = false,
     )
+    val playerBounds = remember { mutableStateMapOf<Long, RectF>() }
+    val hitPadX = with(density) { 16.dp.toPx() }
+    val hitExtraY = with(density) { 24.dp.toPx() }
+
+    fun publishHits() {
+        hitTester?.setSlop(hitPadX, hitExtraY)
+        hitTester?.replacePlayers(playerBounds)
+    }
 
     Box(modifier = modifier.width(panelWidth)) {
         Column(
@@ -83,21 +109,35 @@ fun OverlayPanel(
                     scaleY = heightScale,
                     mirroredColumns = mirroredColumns,
                     columnWidths = columnWidths,
+                    selected = player.id != null && player.id == selectedPlayerId,
+                    callActionKind = if (includeSelectable) {
+                        callAction(player)
+                    } else {
+                        OverlayCallActionKind.Hidden
+                    },
+                    onPlayerBounds = { playerId, rect ->
+                        if (rect == null) {
+                            playerBounds.remove(playerId)
+                        } else {
+                            playerBounds[playerId] = rect
+                        }
+                        publishHits()
+                    },
                 )
             }
         }
         if (configMode) {
-            PanelEdgeHandle(
-                orientation = HandleOrientation.Horizontal,
+            OverlayResizeEdgeHandle(
+                orientation = OverlayResizeEdgeOrientation.Horizontal,
                 scale = widthScale,
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
-            PanelEdgeHandle(
-                orientation = HandleOrientation.Vertical,
+            OverlayResizeEdgeHandle(
+                orientation = OverlayResizeEdgeOrientation.Vertical,
                 scale = heightScale,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-            PanelCornerHandle(
+            OverlayResizeCornerHandle(
                 scale = minOf(widthScale, heightScale),
                 modifier = Modifier.align(Alignment.BottomEnd),
             )
@@ -105,11 +145,11 @@ fun OverlayPanel(
     }
 }
 
-private enum class HandleOrientation { Horizontal, Vertical }
+internal enum class OverlayResizeEdgeOrientation { Horizontal, Vertical }
 
 @Composable
-private fun PanelEdgeHandle(
-    orientation: HandleOrientation,
+internal fun OverlayResizeEdgeHandle(
+    orientation: OverlayResizeEdgeOrientation,
     scale: Float,
     modifier: Modifier = Modifier,
 ) {
@@ -117,11 +157,11 @@ private fun PanelEdgeHandle(
     val handleLength = (28f * scale.coerceIn(0.85f, 1.4f)).dp
     Canvas(
         modifier = when (orientation) {
-            HandleOrientation.Horizontal -> modifier
+            OverlayResizeEdgeOrientation.Horizontal -> modifier
                 .width(handleThickness)
                 .height(handleLength)
                 .padding(2.dp)
-            HandleOrientation.Vertical -> modifier
+            OverlayResizeEdgeOrientation.Vertical -> modifier
                 .width(handleLength)
                 .height(handleThickness)
                 .padding(2.dp)
@@ -130,7 +170,7 @@ private fun PanelEdgeHandle(
         val color = Color(0xE0FFFFFF)
         val strokeWidth = 2.5.dp.toPx()
         when (orientation) {
-            HandleOrientation.Horizontal -> {
+            OverlayResizeEdgeOrientation.Horizontal -> {
                 val centerX = size.width / 2f
                 drawLine(
                     color = color,
@@ -140,7 +180,7 @@ private fun PanelEdgeHandle(
                     cap = StrokeCap.Round,
                 )
             }
-            HandleOrientation.Vertical -> {
+            OverlayResizeEdgeOrientation.Vertical -> {
                 val centerY = size.height / 2f
                 drawLine(
                     color = color,
@@ -198,21 +238,43 @@ private fun PlayerRow(
     scaleY: Float,
     mirroredColumns: Boolean,
     columnWidths: OverlayColumnWidths,
+    selected: Boolean,
+    callActionKind: OverlayCallActionKind,
+    onPlayerBounds: (Long, RectF?) -> Unit,
 ) {
     val textSize = fontSizeSp.sp
     val textStyle = compactOverlayTextStyle(textSize)
     val cells = playerRowCells(player, mirroredColumns)
     val cellCorner = (4f * minOf(scaleX, scaleY)).dp
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                drawRoundRect(
-                    color = OverlayTableBackground,
-                    cornerRadius = CornerRadius(cellCorner.toPx(), cellCorner.toPx()),
-                    blendMode = BlendMode.Src,
-                )
+    val playerId = player.id
+    DisposableEffect(playerId) {
+        onDispose {
+            if (playerId != null) {
+                onPlayerBounds(playerId, null)
+            }
+        }
+    }
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .then(
+            if (playerId != null && callActionKind != OverlayCallActionKind.Hidden) {
+                Modifier.onGloballyPositioned { coordinates ->
+                    val bounds = coordinates.boundsInRoot()
+                    onPlayerBounds(playerId, RectF(bounds.left, bounds.top, bounds.right, bounds.bottom))
+                }
+            } else {
+                Modifier
             },
+        )
+        .drawBehind {
+            drawRoundRect(
+                color = if (selected) Color(0x334CAF50) else OverlayTableBackground,
+                cornerRadius = CornerRadius(cellCorner.toPx(), cellCorner.toPx()),
+                blendMode = BlendMode.Src,
+            )
+        }
+    Row(
+        modifier = rowModifier,
         horizontalArrangement = Arrangement.spacedBy(columnWidths.cellSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -182,7 +182,7 @@ class CaptureForegroundService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "data"
         private const val STATISTICS_FAILED_MESSAGE = "Не удалось получить статистику"
-        private val STATISTICS_REQUEST_TIMEOUT = 30.seconds
+        private val STATISTICS_REQUEST_TIMEOUT = 1.minutes
         private const val RETRY_CAPTURE_DELAY_MS = 1_500L
         private const val FINAL_CAPTURE_DELAY_MS = 2_000L
         private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()

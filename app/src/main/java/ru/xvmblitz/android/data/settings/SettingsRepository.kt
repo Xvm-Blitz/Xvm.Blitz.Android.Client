@@ -42,6 +42,11 @@ data class AppSettings(
     val sessionSummaryOverlayScaleX: Float = 1f,
     val sessionSummaryOverlayScaleY: Float = 1f,
     val sessionSummaryOverlayVisible: Boolean = false,
+    val voiceDoNotDisturb: Boolean = false,
+    val voiceCallX: Int = Int.MIN_VALUE,
+    val voiceCallY: Int = Int.MIN_VALUE,
+    val voiceCallScaleX: Float = 1f,
+    val voiceCallScaleY: Float = 1f,
 )
 
 class SettingsRepository(context: Context) {
@@ -75,6 +80,15 @@ class SettingsRepository(context: Context) {
                 preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_Y] ?: 1f,
             ),
             sessionSummaryOverlayVisible = preferences[Keys.SESSION_SUMMARY_OVERLAY_VISIBLE] ?: false,
+            voiceDoNotDisturb = preferences[Keys.VOICE_DO_NOT_DISTURB] ?: false,
+            voiceCallX = preferences[Keys.VOICE_CALL_X] ?: Int.MIN_VALUE,
+            voiceCallY = preferences[Keys.VOICE_CALL_Y] ?: Int.MIN_VALUE,
+            voiceCallScaleX = coerceSessionSummaryScaleX(
+                preferences[Keys.VOICE_CALL_SCALE_X] ?: 1f,
+            ),
+            voiceCallScaleY = coerceSessionSummaryScaleY(
+                preferences[Keys.VOICE_CALL_SCALE_Y] ?: 1f,
+            ),
         )
     }
 
@@ -124,6 +138,10 @@ class SettingsRepository(context: Context) {
             preferences[Keys.SESSION_SUMMARY_OVERLAY_Y] = defaults.sessionSummaryOverlayY
             preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_X] = defaults.sessionSummaryOverlayScaleX
             preferences[Keys.SESSION_SUMMARY_OVERLAY_SCALE_Y] = defaults.sessionSummaryOverlayScaleY
+            preferences[Keys.VOICE_CALL_X] = defaults.voiceCallX
+            preferences[Keys.VOICE_CALL_Y] = defaults.voiceCallY
+            preferences[Keys.VOICE_CALL_SCALE_X] = defaults.voiceCallScaleX
+            preferences[Keys.VOICE_CALL_SCALE_Y] = defaults.voiceCallScaleY
         }
     }
 
@@ -193,6 +211,26 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setVoiceDoNotDisturb(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.VOICE_DO_NOT_DISTURB] = enabled
+        }
+    }
+
+    suspend fun updateVoiceCallPosition(x: Int, y: Int) {
+        dataStore.edit { preferences ->
+            preferences[Keys.VOICE_CALL_X] = x
+            preferences[Keys.VOICE_CALL_Y] = y
+        }
+    }
+
+    suspend fun updateVoiceCallScale(scaleX: Float, scaleY: Float) {
+        dataStore.edit { preferences ->
+            preferences[Keys.VOICE_CALL_SCALE_X] = coerceSessionSummaryScaleX(scaleX)
+            preferences[Keys.VOICE_CALL_SCALE_Y] = coerceSessionSummaryScaleY(scaleY)
+        }
+    }
+
     private object Keys {
         val ALLIES_X = intPreferencesKey("allies_x")
         val ALLIES_Y = intPreferencesKey("allies_y")
@@ -215,5 +253,10 @@ class SettingsRepository(context: Context) {
         val SESSION_SUMMARY_OVERLAY_SCALE_X = floatPreferencesKey("session_summary_overlay_scale_x")
         val SESSION_SUMMARY_OVERLAY_SCALE_Y = floatPreferencesKey("session_summary_overlay_scale_y")
         val SESSION_SUMMARY_OVERLAY_VISIBLE = booleanPreferencesKey("session_summary_overlay_visible")
+        val VOICE_DO_NOT_DISTURB = booleanPreferencesKey("voice_do_not_disturb")
+        val VOICE_CALL_X = intPreferencesKey("voice_call_x")
+        val VOICE_CALL_Y = intPreferencesKey("voice_call_y")
+        val VOICE_CALL_SCALE_X = floatPreferencesKey("voice_call_scale_x")
+        val VOICE_CALL_SCALE_Y = floatPreferencesKey("voice_call_scale_y")
     }
 }

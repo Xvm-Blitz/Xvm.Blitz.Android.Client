@@ -178,6 +178,7 @@ class MainViewModel(
         paymentPollingJob?.cancel()
         container.battleSessionRuntimeService.setListener(null)
         viewModelScope.launch {
+            container.voiceRuntimeService.shutdownAndWait()
             container.battleSessionRuntimeService.dispose()
             container.presenceRuntimeService.dispose()
         }
@@ -399,6 +400,7 @@ class MainViewModel(
         if (usageResult.isSuccess || usageState.value != null) {
             usageUpdatedAtEpochMs.value = System.currentTimeMillis()
         }
+        container.voiceRuntimeService.setAccessType(usageState.value?.type)
     }
 
     fun checkForUpdates() {
@@ -446,6 +448,12 @@ class MainViewModel(
     fun resetOverlayPositions() {
         viewModelScope.launch {
             container.settingsRepository.resetOverlayPositions()
+        }
+    }
+
+    fun setVoiceDoNotDisturb(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsRepository.setVoiceDoNotDisturb(enabled)
         }
     }
 
@@ -589,6 +597,8 @@ class MainViewModel(
             paymentPollingJob?.cancel()
             paymentStatusClearJob?.cancel()
             runCatching { container.openIdApi.logout() }
+            container.voiceRuntimeService.shutdownAndWait()
+            container.voiceRuntimeService.setAccessType(null)
             container.presenceRuntimeService.stop()
             container.battleSessionRuntimeService.setActiveSession(null, null)
             container.authRepository.clear()
@@ -610,6 +620,7 @@ class MainViewModel(
 
     private fun startPresence() {
         viewModelScope.launch {
+            container.voiceRuntimeService.refreshAccount()
             container.presenceRuntimeService.start()
         }
     }

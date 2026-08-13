@@ -25,6 +25,7 @@ import ru.xvmblitz.android.data.api.StatisticsApi
 import ru.xvmblitz.android.data.api.SubscriptionApi
 import ru.xvmblitz.android.data.api.UpdatesApi
 import ru.xvmblitz.android.data.api.UsageApi
+import ru.xvmblitz.android.data.api.VoiceApi
 import ru.xvmblitz.android.data.auth.AuthRepository
 import ru.xvmblitz.android.data.auth.SecureStorage
 import ru.xvmblitz.android.data.session.SessionsRepository
@@ -33,6 +34,7 @@ import ru.xvmblitz.android.domain.BattleSessionRuntimeService
 import ru.xvmblitz.android.domain.BattleStatisticsStore
 import ru.xvmblitz.android.domain.PresenceRuntimeService
 import ru.xvmblitz.android.domain.SessionSummaryStore
+import ru.xvmblitz.android.voice.VoiceRuntimeService
 import java.util.concurrent.TimeUnit
 
 class AppContainer(context: Context) {
@@ -55,7 +57,7 @@ class AppContainer(context: Context) {
 
     private val refreshHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .connectionSpecs(
             listOf(
@@ -67,7 +69,7 @@ class AppContainer(context: Context) {
 
     val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .connectionSpecs(
             listOf(
@@ -140,6 +142,10 @@ class AppContainer(context: Context) {
     var sessionsApi: SessionsApi = retrofit.create(SessionsApi::class.java)
         private set
 
+    @Volatile
+    var voiceApi: VoiceApi = retrofit.create(VoiceApi::class.java)
+        private set
+
     val sessionsRepository = SessionsRepository(sessionsApi, authRepository)
 
     val battleSessionRuntimeService = BattleSessionRuntimeService(
@@ -150,6 +156,15 @@ class AppContainer(context: Context) {
     val presenceRuntimeService = PresenceRuntimeService(
         apiBaseUrlProvider = { apiBaseUrl },
         accessTokenProvider = { getValidAccessToken() },
+    )
+
+    val voiceRuntimeService = VoiceRuntimeService(
+        appContext = appContext,
+        presence = presenceRuntimeService,
+        voiceApiProvider = { voiceApi },
+        authRepository = authRepository,
+        settingsRepository = settingsRepository,
+        battleStatisticsStore = battleStatisticsStore,
     )
 
     fun openIdLoginUrl(): String {
@@ -171,6 +186,7 @@ class AppContainer(context: Context) {
         openIdApi = retrofit.create(OpenIdApi::class.java)
         updatesApi = retrofit.create(UpdatesApi::class.java)
         sessionsApi = retrofit.create(SessionsApi::class.java)
+        voiceApi = retrofit.create(VoiceApi::class.java)
         sessionsRepository.updateApi(sessionsApi)
     }
 

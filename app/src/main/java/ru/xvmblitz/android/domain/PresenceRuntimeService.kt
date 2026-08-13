@@ -21,6 +21,30 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.xvmblitz.android.BuildConfig
+import ru.xvmblitz.android.data.api.VoiceCallCanceledPayload
+import ru.xvmblitz.android.data.api.VoiceCallRejectedPayload
+import ru.xvmblitz.android.data.api.VoiceDoNotDisturbChangedPayload
+import ru.xvmblitz.android.data.api.VoiceIceCandidatePayload
+import ru.xvmblitz.android.data.api.VoiceIncomingCallPayload
+import ru.xvmblitz.android.data.api.VoicePeerJoinedPayload
+import ru.xvmblitz.android.data.api.VoicePeerLeftPayload
+import ru.xvmblitz.android.data.api.VoiceRoomEndedPayload
+import ru.xvmblitz.android.data.api.VoiceSdpPayload
+
+interface PresenceVoiceListener {
+    fun onHubConnected()
+    fun onHubDisconnected()
+    fun onIncomingCall(payload: VoiceIncomingCallPayload)
+    fun onCallRejected(payload: VoiceCallRejectedPayload)
+    fun onCallCanceled(payload: VoiceCallCanceledPayload)
+    fun onPeerJoined(payload: VoicePeerJoinedPayload)
+    fun onPeerLeft(payload: VoicePeerLeftPayload)
+    fun onRoomEnded(payload: VoiceRoomEndedPayload)
+    fun onOffer(payload: VoiceSdpPayload)
+    fun onAnswer(payload: VoiceSdpPayload)
+    fun onIceCandidate(payload: VoiceIceCandidatePayload)
+    fun onDoNotDisturbChanged(payload: VoiceDoNotDisturbChangedPayload)
+}
 
 class PresenceRuntimeService(
     private val apiBaseUrlProvider: () -> String,
@@ -32,6 +56,15 @@ class PresenceRuntimeService(
     private var loopJob: Job? = null
     private var connectGeneration = 0
     private var enabled = false
+
+    @Volatile
+    var voiceListener: PresenceVoiceListener? = null
+
+    @Volatile
+    var localDoNotDisturb: Boolean = false
+
+    val isConnected: Boolean
+        get() = connection?.connectionState == HubConnectionState.CONNECTED
 
     suspend fun start() {
         mutex.withLock {
@@ -62,6 +95,64 @@ class PresenceRuntimeService(
             enabled = false
             stopLoop()
             disconnectInternal()
+        }
+    }
+
+    suspend fun invite(targetPlayerId: Long) {
+        invokeVoice("Invite", targetPlayerId)
+    }
+
+    suspend fun accept(roomId: String) {
+        invokeVoice("Accept", roomId)
+    }
+
+    suspend fun reject(roomId: String) {
+        invokeVoice("Reject", roomId)
+    }
+
+    suspend fun cancel(roomId: String?) {
+        invokeVoice("Cancel", roomId)
+    }
+
+    suspend fun leave() {
+        invokeVoice("Leave")
+    }
+
+    suspend fun offer(targetPlayerId: Long, sdp: String) {
+        invokeVoice("Offer", targetPlayerId, sdp)
+    }
+
+    suspend fun answer(targetPlayerId: Long, sdp: String) {
+        invokeVoice("Answer", targetPlayerId, sdp)
+    }
+
+    suspend fun iceCandidate(targetPlayerId: Long, candidate: String) {
+        invokeVoice("IceCandidate", targetPlayerId, candidate)
+    }
+
+    suspend fun setDoNotDisturb(enabled: Boolean) {
+        localDoNotDisturb = enabled
+        if (!isConnected) {
+            return
+        }
+        invokeVoice("SetDoNotDisturb", enabled)
+    }
+
+    private suspend fun invokeVoice(method: String, vararg args: Any?) {
+        val hub = mutex.withLock {
+            val current = connection ?: throw IllegalStateException("Нет соединения с голосовым хабом")
+            if (current.connectionState != HubConnectionState.CONNECTED) {
+                throw IllegalStateException("Нет соединения с голосовым хабом")
+            }
+            current
+        }
+        withContext(Dispatchers.IO) {
+            val invocation = if (args.isEmpty()) {
+                hub.invoke(method)
+            } else {
+                hub.invoke(method, *args)
+            }
+            invocation.blockingAwait()
         }
     }
 
@@ -112,6 +203,7 @@ class PresenceRuntimeService(
             }
         }
         val hub = builder.build()
+        bindVoiceEvents(hub)
         hub.onClosed {
             scope.launch {
                 mutex.withLock {
@@ -119,6 +211,7 @@ class PresenceRuntimeService(
                         connection = null
                     }
                 }
+                voiceListener?.onHubDisconnected()
             }
         }
         withContext(Dispatchers.IO) {
@@ -136,6 +229,61 @@ class PresenceRuntimeService(
         }
         connection = hub
         sendHeartbeatInternal()
+        sendDoNotDisturbInternal()
+        scope.launch { voiceListener?.onHubConnected() }
+    }
+
+    private fun bindVoiceEvents(hub: HubConnection) {
+        hub.on(
+            "incomingCall",
+            { payload: VoiceIncomingCallPayload -> voiceListener?.onIncomingCall(payload) },
+            VoiceIncomingCallPayload::class.java,
+        )
+        hub.on(
+            "callRejected",
+            { payload: VoiceCallRejectedPayload -> voiceListener?.onCallRejected(payload) },
+            VoiceCallRejectedPayload::class.java,
+        )
+        hub.on(
+            "callCanceled",
+            { payload: VoiceCallCanceledPayload -> voiceListener?.onCallCanceled(payload) },
+            VoiceCallCanceledPayload::class.java,
+        )
+        hub.on(
+            "peerJoined",
+            { payload: VoicePeerJoinedPayload -> voiceListener?.onPeerJoined(payload) },
+            VoicePeerJoinedPayload::class.java,
+        )
+        hub.on(
+            "peerLeft",
+            { payload: VoicePeerLeftPayload -> voiceListener?.onPeerLeft(payload) },
+            VoicePeerLeftPayload::class.java,
+        )
+        hub.on(
+            "roomEnded",
+            { payload: VoiceRoomEndedPayload -> voiceListener?.onRoomEnded(payload) },
+            VoiceRoomEndedPayload::class.java,
+        )
+        hub.on(
+            "offer",
+            { payload: VoiceSdpPayload -> voiceListener?.onOffer(payload) },
+            VoiceSdpPayload::class.java,
+        )
+        hub.on(
+            "answer",
+            { payload: VoiceSdpPayload -> voiceListener?.onAnswer(payload) },
+            VoiceSdpPayload::class.java,
+        )
+        hub.on(
+            "iceCandidate",
+            { payload: VoiceIceCandidatePayload -> voiceListener?.onIceCandidate(payload) },
+            VoiceIceCandidatePayload::class.java,
+        )
+        hub.on(
+            "doNotDisturbChanged",
+            { payload: VoiceDoNotDisturbChangedPayload -> voiceListener?.onDoNotDisturbChanged(payload) },
+            VoiceDoNotDisturbChangedPayload::class.java,
+        )
     }
 
     private suspend fun sendHeartbeatInternal() {
@@ -146,6 +294,18 @@ class PresenceRuntimeService(
         withContext(Dispatchers.IO) {
             runCatching { hub.invoke("Heartbeat").blockingAwait() }
                 .onFailure { Log.w(Tag, "Presence heartbeat failed", it) }
+        }
+    }
+
+    private suspend fun sendDoNotDisturbInternal() {
+        val hub = connection ?: return
+        if (hub.connectionState != HubConnectionState.CONNECTED) {
+            return
+        }
+        val enabled = localDoNotDisturb
+        withContext(Dispatchers.IO) {
+            runCatching { hub.invoke("SetDoNotDisturb", enabled).blockingAwait() }
+                .onFailure { Log.w(Tag, "SetDoNotDisturb failed", it) }
         }
     }
 

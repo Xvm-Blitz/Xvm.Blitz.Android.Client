@@ -55,6 +55,9 @@ class MainActivity : ComponentActivity() {
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission(),
                     ) { /* no-op */ }
+                    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission(),
+                    ) { /* no-op */ }
 
                     fun ensureOverlayRunning() {
                         if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -87,6 +90,7 @@ class MainActivity : ComponentActivity() {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
+                        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         val settings = container.settingsRepository.current()
                         if (!settings.guideCompleted) {
                             navController.navigate(Routes.Guide) {
@@ -154,6 +158,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOverlayVisibleChange = mainViewModel::setOverlayVisible,
                                 onResetOverlayPositions = mainViewModel::resetOverlayPositions,
+                                onVoiceDoNotDisturbChange = mainViewModel::setVoiceDoNotDisturb,
                                 onSelectSession = mainViewModel::selectSession,
                                 onStartSession = mainViewModel::startSession,
                                 onRestoreSessions = mainViewModel::restoreSessions,

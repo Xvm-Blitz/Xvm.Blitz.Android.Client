@@ -11,6 +11,7 @@ private const val OverlayTankColumnWeight = 1.2f
 private const val OverlayColumnGapCount = 4
 private const val OverlayDigitWidthFactor = 0.58f
 private const val OverlayStatusDotBaseDp = 7f
+private const val OverlayCallActionBaseDp = 16f
 private const val OverlayCellSpacingBaseDp = 8f
 
 data class OverlayColumnWidths(
@@ -20,10 +21,14 @@ data class OverlayColumnWidths(
     val battles: Dp,
     val winRate: Dp,
     val cellSpacing: Dp,
+    val callAction: Dp = 0.dp,
 )
 
 fun overlayStatusDotSizeDp(scale: Float): Float =
     OverlayStatusDotBaseDp * scale.coerceIn(0.85f, 1.4f)
+
+fun overlayCallActionSizeDp(scale: Float): Float =
+    OverlayCallActionBaseDp * scale.coerceIn(0.85f, 1.4f)
 
 fun overlayColumnWidths(
     panelWidthDp: Float,
@@ -31,11 +36,14 @@ fun overlayColumnWidths(
     fontSizeSp: Float,
     rowScaleX: Float,
     statusDotScale: Float,
+    includeCallAction: Boolean = false,
 ): OverlayColumnWidths {
     val digitWidthDp = fontSizeSp * OverlayDigitWidthFactor
     val winRateDp = digitWidthDp * OverlayWinRateColumnChars
     val battlesDp = digitWidthDp * OverlayBattlesColumnChars
     val statusDotDp = overlayStatusDotSizeDp(statusDotScale)
+    val callActionDp = if (includeCallAction) overlayCallActionSizeDp(rowScaleX) else 0f
+    val gapCount = if (includeCallAction) OverlayColumnGapCount + 1 else OverlayColumnGapCount
     val cellSpacingDp = OverlayCellSpacingBaseDp * rowScaleX
     val contentWidthDp = (panelWidthDp - contentPaddingDp * 2f).coerceAtLeast(0f)
     val flexibleWidthDp = (
@@ -43,7 +51,8 @@ fun overlayColumnWidths(
             winRateDp -
             battlesDp -
             statusDotDp -
-            cellSpacingDp * OverlayColumnGapCount
+            callActionDp -
+            cellSpacingDp * gapCount
         ).coerceAtLeast(0f)
     val totalWeight = OverlayNicknameColumnWeight + OverlayTankColumnWeight
     val tankDp = flexibleWidthDp * (OverlayTankColumnWeight / totalWeight)
@@ -55,6 +64,7 @@ fun overlayColumnWidths(
         battles = battlesDp.dp,
         winRate = winRateDp.dp,
         cellSpacing = cellSpacingDp.dp,
+        callAction = callActionDp.dp,
     )
 }
 

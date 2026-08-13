@@ -31,6 +31,7 @@ data class BattlePlayerStatisticsDto(
     @SerialName("win_rate_percents") val winRatePercents: Double? = null,
     @SerialName("number_of_battles") val numberOfBattles: Int? = null,
     @SerialName("xvm_usage") val xvmUsage: XvmUsageStatus = XvmUsageStatus.Never,
+    @SerialName("do_not_disturb") val doNotDisturb: Boolean = false,
 )
 
 @Serializable
