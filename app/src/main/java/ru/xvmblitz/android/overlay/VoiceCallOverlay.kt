@@ -7,12 +7,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
@@ -209,69 +215,82 @@ fun VoiceCallWidget(
         }
     }
     val useExample = configMode && state.phase == VoicePhase.Idle
-    val nicks = if (useExample) "Игрок1, Игрок2" else widgetNicknames(state)
-    val countdown = if (useExample) "Осталось 1:24" else widgetCountdown(state, nowMs)
+    val nickLines = if (useExample) {
+        listOf("Игрок1, Игрок2")
+    } else {
+        formatNicknameLines(widgetNicknameList(state))
+    }
+    val countdown = if (useExample) "1:24" else widgetCountdown(state, nowMs)
     val titleSize = voiceCallOverlayTitleFontSizeSp(scaleY)
     val fontSize = voiceCallOverlayFontSizeSp(scaleY)
+    val titleStyle = compactOverlayTextStyle(titleSize.sp)
+    val fontStyle = compactOverlayTextStyle(fontSize.sp)
     val horizontalPadding = voiceCallOverlayPaddingHorizontalDp(scaleX, scaleY).dp
     val verticalPadding = voiceCallOverlayPaddingVerticalDp(scaleY).dp
-    val spacing = voiceCallOverlaySpacingDp(scaleX, scaleY).dp
-    val minWidth = (140f * coerceSessionSummaryScaleX(scaleX)).dp
-    val maxWidth = (220f * coerceSessionSummaryScaleX(scaleX)).dp
-    Box {
-        Column(
+    val buttonSize = voiceCallOverlayButtonDp(scaleY)
+    val minWidth = voiceCallOverlayMinWidthDp(scaleX, scaleY)
+    Box(modifier = Modifier.wrapContentHeight()) {
+        Row(
             modifier = Modifier
-                .widthIn(min = minWidth, max = maxWidth)
-                .clip(RoundedCornerShape(8.dp))
+                .width(minWidth.dp)
+                .height(IntrinsicSize.Min)
+                .clip(RoundedCornerShape(5.dp))
                 .background(Color(0xE012151C))
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-            verticalArrangement = Arrangement.spacedBy(spacing),
+            horizontalArrangement = Arrangement.spacedBy(horizontalPadding),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = nicks,
-                color = Color.White,
-                fontSize = titleSize.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = countdown,
-                color = Color(0xFFB0B8C4),
-                fontSize = fontSize.sp,
-                maxLines = 1,
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(spacing),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(verticalPadding),
             ) {
-                VoiceOverlayIconButton(
-                    icon = if (state.muted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                    tint = if (state.muted) Color(0xFFBDBDBD) else Color.White,
-                    label = "Микрофон",
-                    background = if (state.muted) Color(0x33FFFFFF) else Color(0xFF2E7D32),
-                    enabled = !configMode,
-                    onClick = onToggleMute,
-                    onBounds = { rect ->
-                        actionBounds["mute"] = rect
-                        publishBounds()
-                    },
-                )
-                VoiceOverlayIconButton(
-                    icon = Icons.Filled.CallEnd,
-                    tint = Color(0xFFD68585),
-                    label = "Сброс",
-                    enabled = !configMode,
-                    onClick = onHangup,
-                    onBounds = { rect ->
-                        actionBounds["hangup"] = rect
-                        publishBounds()
-                    },
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    nickLines.forEach { line ->
+                        Text(
+                            text = line,
+                            color = Color.White,
+                            style = titleStyle.copy(fontWeight = FontWeight.Medium),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Text(
+                    text = countdown,
+                    color = Color(0xFFB0B8C4),
+                    style = fontStyle,
+                    maxLines = 1,
                 )
             }
+            VoiceOverlayIconButton(
+                icon = if (state.muted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                tint = if (state.muted) Color(0xFFBDBDBD) else Color.White,
+                label = "Микрофон",
+                background = if (state.muted) Color(0x33FFFFFF) else Color(0xFF2E7D32),
+                enabled = !configMode,
+                buttonSizeDp = buttonSize,
+                onClick = onToggleMute,
+                onBounds = { rect ->
+                    actionBounds["mute"] = rect
+                    publishBounds()
+                },
+            )
+            VoiceOverlayIconButton(
+                icon = Icons.Filled.CallEnd,
+                tint = Color(0xFFD68585),
+                label = "Сброс",
+                enabled = !configMode,
+                buttonSizeDp = buttonSize,
+                onClick = onHangup,
+                onBounds = { rect ->
+                    actionBounds["hangup"] = rect
+                    publishBounds()
+                },
+            )
         }
         if (configMode) {
-            OverlayResizeSquareHandle(
+            OverlayResizeCornerHandle(
+                scale = minOf(scaleX, scaleY).coerceIn(0.85f, 1.4f),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .zIndex(2f),
@@ -287,13 +306,16 @@ private fun VoiceOverlayIconButton(
     label: String,
     onClick: () -> Unit,
     onBounds: (RectF) -> Unit,
+    buttonSizeDp: Float,
     background: Color = Color(0x33FFFFFF),
     enabled: Boolean = true,
 ) {
     Box(
         modifier = Modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .width(buttonSizeDp.dp)
+            .fillMaxHeight()
+            .heightIn(min = buttonSizeDp.dp)
+            .clip(RoundedCornerShape((buttonSizeDp * 0.18f).dp))
             .background(background)
             .onGloballyPositioned { coordinates ->
                 val bounds = coordinates.boundsInRoot()
@@ -316,7 +338,7 @@ private fun VoiceOverlayIconButton(
             imageVector = icon,
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.fillMaxSize(0.62f),
         )
     }
 }
@@ -369,7 +391,7 @@ private fun VoiceOverlayButton(
     }
 }
 
-private fun widgetNicknames(state: VoiceUiState): String {
+private fun widgetNicknameList(state: VoiceUiState): List<String> {
     val ids = buildList {
         if (state.phase == VoicePhase.OutgoingRinging) {
             state.outgoingTargetPlayerId?.let(::add)
@@ -380,16 +402,25 @@ private fun widgetNicknames(state: VoiceUiState): String {
         }
     }.distinct()
     if (ids.isEmpty()) {
-        return if (state.phase == VoicePhase.OutgoingRinging) "Вызов…" else "Голосовой чат"
+        return listOf(
+            if (state.phase == VoicePhase.OutgoingRinging) "Вызов…" else "Голосовой чат",
+        )
     }
-    return ids.joinToString(", ") { playerId -> state.nickname(playerId) }
+    return ids.map { playerId -> state.nickname(playerId) }
+}
+
+private fun formatNicknameLines(nicks: List<String>): List<String> {
+    if (nicks.size in 3..4) {
+        return nicks
+    }
+    return nicks.chunked(2) { pair -> pair.joinToString(", ") }
 }
 
 private fun widgetCountdown(state: VoiceUiState, nowMs: Long): String {
     val deadline = state.endsAtMs ?: state.incomingExpiresAtMs
     if (deadline != null) {
         val remaining = ((deadline - nowMs) / 1000L).coerceAtLeast(0L)
-        return "Осталось ${formatMmSs(remaining)}"
+        return "${formatMmSs(remaining)}"
     }
     return if (state.phase == VoicePhase.OutgoingRinging) {
         "Ожидание ответа…"

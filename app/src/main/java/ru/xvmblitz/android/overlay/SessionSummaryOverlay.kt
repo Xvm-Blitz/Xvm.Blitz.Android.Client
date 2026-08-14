@@ -4,9 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,7 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,41 +32,34 @@ fun SessionSummaryOverlayContent(
     configMode: Boolean = false,
 ) {
     val fontSize = sessionSummaryOverlayFontSizeSp(scaleY)
+    val textStyle = compactOverlayTextStyle(fontSize.sp)
     val horizontalPadding = sessionSummaryOverlayPaddingHorizontalDp(scaleX, scaleY)
     val verticalPadding = sessionSummaryOverlayPaddingVerticalDp(scaleY)
     val spacing = sessionSummaryOverlaySpacingDp(scaleX, scaleY).dp
     val minWidth = sessionSummaryOverlayMinWidthDp(scaleX, scaleY)
-    val minHeight = sessionSummaryOverlayMinHeightDp(scaleY)
-    val maxWidth = (LocalConfiguration.current.screenWidthDp * 0.92f).dp
-    val endPadding = if (configMode) horizontalPadding + 14f else horizontalPadding
-    val bottomPadding = if (configMode) verticalPadding + 8f else verticalPadding
     Box(
         modifier = Modifier
-            .widthIn(min = minWidth.dp, max = maxWidth)
-            .heightIn(min = minHeight.dp),
+            .width(minWidth.dp)
+            .wrapContentHeight(),
     ) {
         Row(
             modifier = Modifier
-                .matchParentSize()
+                .fillMaxWidth()
                 .clip(RoundedCornerShape(5.dp))
                 .background(Color(0xB3000000))
-                .padding(
-                    start = horizontalPadding.dp,
-                    top = verticalPadding.dp,
-                    end = endPadding.dp,
-                    bottom = bottomPadding.dp,
-                ),
-            horizontalArrangement = Arrangement.spacedBy(spacing),
+                .padding(horizontal = horizontalPadding.dp, vertical = verticalPadding.dp),
+            horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SummaryOverlayText(text = battlesText, fontSize = fontSize)
-            SummaryOverlayText(text = "·", fontSize = fontSize, alpha = 0.5f)
-            SummaryOverlayText(text = winRateText, fontSize = fontSize, weight = FontWeight.SemiBold)
-            SummaryOverlayText(text = "·", fontSize = fontSize, alpha = 0.5f)
-            SummaryOverlayText(text = damageText, fontSize = fontSize)
+            SummaryOverlayText(text = battlesText, style = textStyle)
+            SummaryOverlayText(text = "·", style = textStyle, alpha = 0.5f)
+            SummaryOverlayText(text = winRateText, style = textStyle, weight = FontWeight.SemiBold)
+            SummaryOverlayText(text = "·", style = textStyle, alpha = 0.5f)
+            SummaryOverlayText(text = damageText, style = textStyle)
         }
         if (configMode) {
-            OverlayResizeSquareHandle(
+            OverlayResizeCornerHandle(
+                scale = minOf(scaleX, scaleY).coerceIn(0.85f, 1.4f),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .zIndex(2f),
@@ -77,17 +71,16 @@ fun SessionSummaryOverlayContent(
 @Composable
 private fun SummaryOverlayText(
     text: String,
-    fontSize: Float,
+    style: TextStyle,
     alpha: Float = 0.9f,
     weight: FontWeight? = null,
 ) {
     Text(
         text = text,
         color = Color.White.copy(alpha = alpha),
-        fontSize = fontSize.sp,
-        fontWeight = weight,
+        style = if (weight != null) style.copy(fontWeight = weight) else style,
         maxLines = 1,
         softWrap = false,
-        overflow = TextOverflow.Ellipsis,
+        overflow = TextOverflow.Clip,
     )
 }

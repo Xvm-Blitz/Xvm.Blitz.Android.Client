@@ -17,6 +17,7 @@ import ru.xvmblitz.android.overlay.OverlayBaseFontSizeSp
 import ru.xvmblitz.android.overlay.coerceOverlayScaleX
 import ru.xvmblitz.android.overlay.coerceOverlayScaleY
 import ru.xvmblitz.android.overlay.coerceSessionSummaryScaleX
+import ru.xvmblitz.android.overlay.coerceVoiceCallScaleX
 import ru.xvmblitz.android.overlay.coerceSessionSummaryScaleY
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "xvm_settings")
@@ -83,7 +84,7 @@ class SettingsRepository(context: Context) {
             voiceDoNotDisturb = preferences[Keys.VOICE_DO_NOT_DISTURB] ?: false,
             voiceCallX = preferences[Keys.VOICE_CALL_X] ?: Int.MIN_VALUE,
             voiceCallY = preferences[Keys.VOICE_CALL_Y] ?: Int.MIN_VALUE,
-            voiceCallScaleX = coerceSessionSummaryScaleX(
+            voiceCallScaleX = coerceVoiceCallScaleX(
                 preferences[Keys.VOICE_CALL_SCALE_X] ?: 1f,
             ),
             voiceCallScaleY = coerceSessionSummaryScaleY(
@@ -226,7 +227,7 @@ class SettingsRepository(context: Context) {
 
     suspend fun updateVoiceCallScale(scaleX: Float, scaleY: Float) {
         dataStore.edit { preferences ->
-            preferences[Keys.VOICE_CALL_SCALE_X] = coerceSessionSummaryScaleX(scaleX)
+            preferences[Keys.VOICE_CALL_SCALE_X] = coerceVoiceCallScaleX(scaleX)
             preferences[Keys.VOICE_CALL_SCALE_Y] = coerceSessionSummaryScaleY(scaleY)
         }
     }

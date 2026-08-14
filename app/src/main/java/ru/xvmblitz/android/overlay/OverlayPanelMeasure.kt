@@ -4,6 +4,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.xvmblitz.android.domain.PlayerSlot
 
+private const val OverlayNicknameMinChars = 8f
+private const val OverlayTankMinChars = 6f
 const val OverlayWinRateColumnChars = 6
 const val OverlayBattlesColumnChars = 4
 private const val OverlayNicknameColumnWeight = 2.4f
@@ -30,10 +32,31 @@ fun overlayStatusDotSizeDp(scale: Float): Float =
 fun overlayCallActionSizeDp(scale: Float): Float =
     OverlayCallActionBaseDp * scale.coerceIn(0.85f, 1.4f)
 
+fun overlayPanelFittedWidthDp(
+    contentPaddingDp: Float,
+    fontSizeSp: Float,
+    fontScale: Float,
+    statusDotScale: Float,
+    includeCallAction: Boolean = false,
+): Float {
+    val digitWidthDp = fontSizeSp * OverlayDigitWidthFactor
+    val gapCount = if (includeCallAction) OverlayColumnGapCount + 1 else OverlayColumnGapCount
+    val callActionDp = if (includeCallAction) overlayCallActionSizeDp(fontScale) else 0f
+    return contentPaddingDp * 2f +
+        overlayStatusDotSizeDp(statusDotScale) +
+        digitWidthDp * OverlayNicknameMinChars +
+        digitWidthDp * OverlayTankMinChars +
+        digitWidthDp * OverlayBattlesColumnChars +
+        digitWidthDp * OverlayWinRateColumnChars +
+        callActionDp +
+        OverlayCellSpacingBaseDp * fontScale * gapCount
+}
+
 fun overlayColumnWidths(
     panelWidthDp: Float,
     contentPaddingDp: Float,
     fontSizeSp: Float,
+    fontScale: Float,
     rowScaleX: Float,
     statusDotScale: Float,
     includeCallAction: Boolean = false,
@@ -44,7 +67,7 @@ fun overlayColumnWidths(
     val statusDotDp = overlayStatusDotSizeDp(statusDotScale)
     val callActionDp = if (includeCallAction) overlayCallActionSizeDp(rowScaleX) else 0f
     val gapCount = if (includeCallAction) OverlayColumnGapCount + 1 else OverlayColumnGapCount
-    val cellSpacingDp = OverlayCellSpacingBaseDp * rowScaleX
+    val cellSpacingDp = OverlayCellSpacingBaseDp * fontScale
     val contentWidthDp = (panelWidthDp - contentPaddingDp * 2f).coerceAtLeast(0f)
     val flexibleWidthDp = (
         contentWidthDp -

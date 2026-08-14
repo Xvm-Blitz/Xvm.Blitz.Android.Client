@@ -68,14 +68,14 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private lateinit var windowManager: WindowManager
-    private var alliesView: ComposeView? = null
-    private var enemiesView: ComposeView? = null
-    private var captureButtonView: ComposeView? = null
-    private var directionHintView: ComposeView? = null
-    private var sessionSummaryView: ComposeView? = null
-    private var incomingCallView: ComposeView? = null
-    private var voiceCallView: ComposeView? = null
-    private var inviteBarView: ComposeView? = null
+    private var alliesView: View? = null
+    private var enemiesView: View? = null
+    private var captureButtonView: View? = null
+    private var directionHintView: View? = null
+    private var sessionSummaryView: View? = null
+    private var incomingCallView: View? = null
+    private var voiceCallView: View? = null
+    private var inviteBarView: View? = null
     private var alliesParams: WindowManager.LayoutParams? = null
     private var enemiesParams: WindowManager.LayoutParams? = null
     private var captureButtonParams: WindowManager.LayoutParams? = null
@@ -215,15 +215,21 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     private fun ensureViews() {
         if (alliesView == null) {
-            alliesParams = createLayoutParams(currentSettings.alliesX, currentSettings.alliesY)
+            alliesParams = createLayoutParams(currentSettings.alliesX, currentSettings.alliesY).apply {
+                width = panelWindowWidthPx(currentSettings.panelScaleX, currentSettings.panelScaleY)
+            }
             alliesView = createComposeOverlayView { AlliesOverlayContent() }.also { view ->
+                view.visibility = android.view.View.GONE
                 attachPanelDrag(view, PanelKind.Allies)
                 windowManager.addView(view, alliesParams)
             }
         }
         if (enemiesView == null) {
-            enemiesParams = createLayoutParams(currentSettings.enemiesX, currentSettings.enemiesY)
+            enemiesParams = createLayoutParams(currentSettings.enemiesX, currentSettings.enemiesY).apply {
+                width = panelWindowWidthPx(currentSettings.panelScaleX, currentSettings.panelScaleY)
+            }
             enemiesView = createComposeOverlayView { EnemiesOverlayContent() }.also { view ->
+                view.visibility = android.view.View.GONE
                 attachPanelDrag(view, PanelKind.Enemies)
                 windowManager.addView(view, enemiesParams)
             }
@@ -330,8 +336,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         )
     }
 
-    private fun createComposeOverlayView(content: @Composable () -> Unit): ComposeView {
+    private fun createComposeOverlayView(content: @Composable () -> Unit): View {
         return ComposeView(this).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
             setViewTreeLifecycleOwner(this@OverlayService)
             setViewTreeSavedStateRegistryOwner(this@OverlayService)
             setContent {
@@ -561,6 +568,9 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
         enemiesView?.visibility =
             if (showPanels) android.view.View.VISIBLE else android.view.View.GONE
+        if (showPanels) {
+            updatePanelWindowSize()
+        }
         captureButtonView?.visibility =
             if (showCaptureButton) android.view.View.VISIBLE else android.view.View.GONE
         sessionSummaryView?.visibility =
@@ -590,11 +600,13 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         alliesParams?.let { params ->
             params.x = settings.alliesX
             params.y = settings.alliesY
+            params.width = panelWindowWidthPx(settings.panelScaleX, settings.panelScaleY)
             alliesView?.let { windowManager.updateViewLayout(it, params) }
         }
         enemiesParams?.let { params ->
             params.x = settings.enemiesX
             params.y = settings.enemiesY
+            params.width = panelWindowWidthPx(settings.panelScaleX, settings.panelScaleY)
             enemiesView?.let { windowManager.updateViewLayout(it, params) }
         }
         sessionSummaryParams?.let { params ->
@@ -757,7 +769,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         runCatching { windowManager.updateViewLayout(hintView, hintParams) }
     }
 
-    private fun attachCaptureButtonTouch(view: ComposeView) {
+    private fun attachCaptureButtonTouch(view: View) {
         val dragThresholdPx = CAPTURE_BUTTON_DRAG_THRESHOLD_DP * resources.displayMetrics.density
         var initialButtonX = 0
         var initialButtonY = 0
@@ -826,7 +838,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
     }
 
-    private fun attachSessionSummaryDrag(view: ComposeView) {
+    private fun attachSessionSummaryDrag(view: View) {
         var initialX = 0
         var initialY = 0
         var touchX = 0f
@@ -988,7 +1000,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         popup.show()
     }
 
-    private fun attachPanelDrag(view: ComposeView, kind: PanelKind) {
+    private fun attachPanelDrag(view: View, kind: PanelKind) {
         var initialX = 0
         var initialY = 0
         var touchX = 0f
@@ -1076,21 +1088,24 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                         }
                         PanelGesture.ResizeHorizontal -> {
                             previewPanelScale.value = PanelScalePreview(
-                                scaleX = scaleXFromWidthDelta(initialScaleX, dx, density),
+                                scaleX = scaleXFromWidthDelta(initialScaleX, initialScaleY, dx, density),
                                 scaleY = initialScaleY,
                             )
+                            updatePanelWindowSize()
                         }
                         PanelGesture.ResizeVertical -> {
                             previewPanelScale.value = PanelScalePreview(
                                 scaleX = initialScaleX,
                                 scaleY = scaleYFromHeightDelta(initialScaleY, dy, density),
                             )
+                            updatePanelWindowSize()
                         }
                         PanelGesture.ResizeBoth -> {
                             previewPanelScale.value = PanelScalePreview(
-                                scaleX = scaleXFromWidthDelta(initialScaleX, dx, density),
+                                scaleX = scaleXFromWidthDelta(initialScaleX, initialScaleY, dx, density),
                                 scaleY = scaleYFromHeightDelta(initialScaleY, dy, density),
                             )
+                            updatePanelWindowSize()
                         }
                         PanelGesture.Pending, PanelGesture.None -> Unit
                     }
@@ -1159,7 +1174,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         }
     }
 
-    private fun attachVoiceCallDrag(view: ComposeView) {
+    private fun attachVoiceCallDrag(view: View) {
         var initialX = 0
         var initialY = 0
         var touchX = 0f
@@ -1532,10 +1547,63 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         return PanelGesture.Drag
     }
 
-    private fun scaleXFromWidthDelta(initialScaleX: Float, widthDelta: Float, density: Float): Float {
+    private fun panelWindowWidthPx(scaleX: Float, scaleY: Float): Int {
+        val density = resources.displayMetrics.density
+        val fontSizeSp = overlayFontSizeSp(scaleY)
+        val fontScale = fontSizeSp / OverlayBaseFontSizeSp
+        val widthScale = coerceOverlayScaleX(scaleX)
+        val requested = OverlayBasePanelWidthDp * widthScale * fontScale
+        val fitted = overlayPanelFittedWidthDp(
+            contentPaddingDp = OverlayPanelContentPaddingDp,
+            fontSizeSp = fontSizeSp,
+            fontScale = fontScale,
+            statusDotScale = minOf(widthScale * fontScale, coerceOverlayScaleY(scaleY)),
+        )
+        return (maxOf(requested, fitted) * density).toInt().coerceAtLeast(1)
+    }
+
+    private fun updatePanelWindowSize() {
+        val preview = previewPanelScale.value
+        val scaleX = preview?.scaleX ?: currentSettings.panelScaleX
+        val scaleY = preview?.scaleY ?: currentSettings.panelScaleY
+        val width = panelWindowWidthPx(scaleX, scaleY)
+        alliesParams?.let { params ->
+            if (params.width != width) {
+                params.width = width
+                alliesView?.let { view -> runCatching { windowManager.updateViewLayout(view, params) } }
+            }
+        }
+        enemiesParams?.let { params ->
+            if (params.width != width) {
+                params.width = width
+                enemiesView?.let { view -> runCatching { windowManager.updateViewLayout(view, params) } }
+            }
+        }
+    }
+
+    private fun scaleXFromWidthDelta(
+        initialScaleX: Float,
+        initialScaleY: Float,
+        widthDelta: Float,
+        density: Float,
+    ): Float {
+        val fontScale = overlayFontSizeSp(initialScaleY) / OverlayBaseFontSizeSp
+        val fontSizeSp = overlayFontSizeSp(initialScaleY)
+        val statusDotScale = minOf(
+            coerceOverlayScaleX(initialScaleX) * fontScale,
+            coerceOverlayScaleY(initialScaleY),
+        )
         val baseWidthPx = OverlayBasePanelWidthDp * density
-        val startWidthPx = baseWidthPx * initialScaleX
-        return coerceOverlayScaleX((startWidthPx + widthDelta) / baseWidthPx)
+        val requestedWidthPx = baseWidthPx * coerceOverlayScaleX(initialScaleX) * fontScale
+        val fittedWidthPx = overlayPanelFittedWidthDp(
+            contentPaddingDp = OverlayPanelContentPaddingDp,
+            fontSizeSp = fontSizeSp,
+            fontScale = fontScale,
+            statusDotScale = statusDotScale,
+        ) * density
+        val startWidthPx = maxOf(requestedWidthPx, fittedWidthPx)
+        val newWidthPx = (startWidthPx + widthDelta).coerceAtLeast(1f)
+        return coerceOverlayScaleX(newWidthPx / (baseWidthPx * fontScale.coerceAtLeast(0.01f)))
     }
 
     private fun scaleYFromHeightDelta(

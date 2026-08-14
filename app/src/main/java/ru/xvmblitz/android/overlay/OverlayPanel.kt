@@ -69,16 +69,23 @@ fun OverlayPanel(
     val includeSelectable = !configMode && players.any { player ->
         callAction(player) != OverlayCallActionKind.Hidden
     }
-    val panelWidthDp = OverlayBasePanelWidthDp * widthScale * fontScale
-    val panelWidth = panelWidthDp.dp
+    val statusDotScale = minOf(rowScaleX, heightScale)
+    val requestedWidthDp = OverlayBasePanelWidthDp * widthScale * fontScale
+    val fittedWidthDp = overlayPanelFittedWidthDp(
+        contentPaddingDp = OverlayPanelContentPaddingDp,
+        fontSizeSp = fontSizeSp,
+        fontScale = fontScale,
+        statusDotScale = statusDotScale,
+    )
+    val panelWidthDp = maxOf(requestedWidthDp, fittedWidthDp)
     val cornerRadius = (8f * minOf(widthScale, heightScale)).dp
     val contentPadding = OverlayPanelContentPaddingDp.dp
     val rowSpacing = with(density) { OverlayRowSpacingPx.toDp() }
-    val statusDotScale = minOf(rowScaleX, heightScale)
     val columnWidths = overlayColumnWidths(
         panelWidthDp = panelWidthDp,
         contentPaddingDp = OverlayPanelContentPaddingDp,
         fontSizeSp = fontSizeSp,
+        fontScale = fontScale,
         rowScaleX = rowScaleX,
         statusDotScale = statusDotScale,
         includeCallAction = false,
@@ -92,7 +99,7 @@ fun OverlayPanel(
         hitTester?.replacePlayers(playerBounds)
     }
 
-    Box(modifier = modifier.width(panelWidth)) {
+    Box(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -200,18 +207,6 @@ internal fun OverlayResizeCornerHandle(
     modifier: Modifier = Modifier,
 ) {
     PanelCornerHandle(scale = scale, modifier = modifier)
-}
-
-@Composable
-internal fun OverlayResizeSquareHandle(
-    modifier: Modifier = Modifier,
-    sizeDp: Float = 22f,
-) {
-    Box(
-        modifier = modifier
-            .size(sizeDp.dp)
-            .background(Color(0xCCFFFFFF), RoundedCornerShape(3.dp)),
-    )
 }
 
 @Composable
@@ -405,7 +400,7 @@ private fun CompactCell(
     )
 }
 
-private fun compactOverlayTextStyle(fontSize: TextUnit): TextStyle {
+internal fun compactOverlayTextStyle(fontSize: TextUnit): TextStyle {
     return TextStyle(
         fontSize = fontSize,
         lineHeight = fontSize,
