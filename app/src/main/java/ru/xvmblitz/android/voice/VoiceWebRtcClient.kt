@@ -57,7 +57,7 @@ class VoiceWebRtcClient(
     private var iceServers: List<PeerConnection.IceServer> = emptyList()
     private var selfPlayerId: Long = 0L
     private var smallerPlayerIdIsPolite: Boolean = true
-    private var muted: Boolean = true
+    private var muted: Boolean = false
     private var lastNetworkKind: String? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private val audioManager = appContext.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
@@ -110,9 +110,10 @@ class VoiceWebRtcClient(
             }
             audioSource = factory?.createAudioSource(constraints)
             localAudioTrack = factory?.createAudioTrack(LocalTrackId, audioSource)?.also { track ->
-                track.setEnabled(false)
+                track.setEnabled(true)
             }
-            muted = true
+            muted = false
+            applyMuteLocked()
             requestAudioFocus()
             registerNetworkCallback()
         }
@@ -171,9 +172,14 @@ class VoiceWebRtcClient(
         mutex.withLock {
             val session = peers[fromPlayerId] ?: return
             val pc = session.peerConnection ?: return
-            val offerCollision = session.makingOffer || pc.signalingState() != PeerConnection.SignalingState.STABLE
-            session.ignoreOffer = !session.polite && offerCollision
-            if (session.ignoreOffer) {
+            if (!session.polite &&
+                (session.makingOffer || pc.signalingState() != PeerConnection.SignalingState.STABLE)
+            ) {
+                Log.i(Tag, "Ignore offer from $fromPlayerId: we are initiator")
+                return
+            }
+            if (pc.signalingState() != PeerConnection.SignalingState.STABLE) {
+                Log.w(Tag, "Cannot accept offer from $fromPlayerId in ${pc.signalingState()}")
                 return
             }
             setRemoteDescription(pc, SessionDescription(SessionDescription.Type.OFFER, sdp))
@@ -197,6 +203,7 @@ class VoiceWebRtcClient(
     }
 
     suspend fun handleRemoteIce(fromPlayerId: Long, candidateJson: String) {
+        ensurePeer(fromPlayerId)
         mutex.withLock {
             val session = peers[fromPlayerId] ?: return
             val candidate = decodeIceCandidate(candidateJson) ?: return
@@ -206,9 +213,7 @@ class VoiceWebRtcClient(
             }
             runCatching { session.peerConnection?.addIceCandidate(candidate) }
                 .onFailure { error ->
-                    if (!session.ignoreOffer) {
-                        Log.w(Tag, "ICE candidate failed", error)
-                    }
+                    Log.w(Tag, "ICE candidate failed", error)
                 }
         }
     }
@@ -271,6 +276,9 @@ class VoiceWebRtcClient(
             override fun onDataChannel(dataChannel: DataChannel?) = Unit
 
             override fun onRenegotiationNeeded() {
+                if (session.polite) {
+                    return
+                }
                 scope.launch { makeOffer(session.playerId) }
             }
 
@@ -526,7 +534,6 @@ class VoiceWebRtcClient(
     ) {
         var peerConnection: PeerConnection? = null
         var makingOffer: Boolean = false
-        var ignoreOffer: Boolean = false
         var remoteDescriptionSet: Boolean = false
         val pendingIce = mutableListOf<IceCandidate>()
 

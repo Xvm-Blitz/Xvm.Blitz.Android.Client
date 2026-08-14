@@ -17,7 +17,7 @@ data class VoiceUiState(
     val outgoingTargetPlayerId: Long? = null,
     val memberIds: List<Long> = emptyList(),
     val endsAtMs: Long? = null,
-    val muted: Boolean = true,
+    val muted: Boolean = false,
     val nicks: Map<Long, String> = emptyMap(),
     val maxParticipants: Int = 4,
     val capturingAudio: Boolean = false,
@@ -33,6 +33,6 @@ data class VoiceUiState(
         if (playerId == null || playerId <= 0L) {
             return "игрок"
         }
-        return nicks[playerId] ?: playerId.toString()
+        return nicks[playerId] ?: "Игрок $playerId"
     }
 }

@@ -476,6 +476,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
                 XvmBlitzApp.instance.container.voiceRuntimeService.invite(
                     playerId,
                     player.xvmUsage == XvmUsageStatus.Currently,
+                    player.nickname,
                 )
             },
             onDismiss = { selectedCallPlayerId.value = null },

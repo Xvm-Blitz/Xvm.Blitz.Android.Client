@@ -82,6 +82,7 @@ class VoiceRuntimeService(
     private val tones = VoiceCallTonePlayer(appContext)
     private var suppressBusy = false
     private var tonePhase = VoicePhase.Idle
+    private var toneStatus: String? = null
 
     init {
         presence.voiceListener = this
@@ -125,7 +126,7 @@ class VoiceRuntimeService(
         refreshAccount()
     }
 
-    fun invite(targetPlayerId: Long, targetOnline: Boolean = true) {
+    fun invite(targetPlayerId: Long, targetOnline: Boolean = true, nickname: String? = null) {
         if (targetPlayerId <= 0L || targetPlayerId == _state.value.selfPlayerId) {
             return
         }
@@ -140,17 +141,22 @@ class VoiceRuntimeService(
         withMicrophone {
             scope.launch {
                 _state.update { state ->
-                    if (state.phase == VoicePhase.InCall) {
-                        state.copy(
+                    val withNick = if (!nickname.isNullOrBlank()) {
+                        state.copy(nicks = state.nicks + (targetPlayerId to nickname.trim()))
+                    } else {
+                        state
+                    }
+                    if (withNick.phase == VoicePhase.InCall) {
+                        withNick.copy(
                             outgoingTargetPlayerId = targetPlayerId,
-                            statusMessage = "Вызов ${state.nickname(targetPlayerId)}…",
+                            statusMessage = "Вызов ${withNick.nickname(targetPlayerId)}…",
                         )
                     } else {
-                        state.copy(
+                        withNick.copy(
                             phase = VoicePhase.OutgoingRinging,
                             outgoingTargetPlayerId = targetPlayerId,
                             incomingExpiresAtMs = System.currentTimeMillis() + inviteTimeoutMs(),
-                            muted = true,
+                            muted = false,
                             capturingAudio = true,
                             statusMessage = null,
                         )
@@ -252,11 +258,17 @@ class VoiceRuntimeService(
         scope.launch {
             val roomId = payload.roomId.takeIf { value -> value.isNotBlank() } ?: return@launch
             _state.update { state ->
+                val nicks = if (!payload.fromNickname.isNullOrBlank()) {
+                    state.nicks + (payload.fromPlayerId to payload.fromNickname.trim())
+                } else {
+                    state.nicks
+                }
                 state.copy(
                     phase = VoicePhase.IncomingRinging,
                     roomId = roomId,
                     incomingFromPlayerId = payload.fromPlayerId,
                     incomingExpiresAtMs = parseTimeMillis(payload.inviteExpiresAt),
+                    nicks = nicks,
                     statusMessage = null,
                 )
             }
@@ -266,6 +278,11 @@ class VoiceRuntimeService(
 
     override fun onCallRejected(payload: VoiceCallRejectedPayload) {
         scope.launch {
+            if (!payload.nickname.isNullOrBlank()) {
+                _state.update { state ->
+                    state.copy(nicks = state.nicks + (payload.playerId to payload.nickname.trim()))
+                }
+            }
             val message = rejectMessage(payload.reason)
             toast(message)
             val current = _state.value
@@ -305,6 +322,9 @@ class VoiceRuntimeService(
                     rtc.ensurePeer(memberId)
                 }
                 rtc.setMuted(_state.value.muted)
+                val payloadNicks = payload.nicknames
+                    .filter { entry -> entry.playerId > 0L && entry.nickname.isNotBlank() }
+                    .associate { entry -> entry.playerId to entry.nickname.trim() }
                 _state.update { state ->
                     state.copy(
                         phase = VoicePhase.InCall,
@@ -313,6 +333,7 @@ class VoiceRuntimeService(
                         endsAtMs = parseTimeMillis(payload.endsAt) ?: state.endsAtMs,
                         outgoingTargetPlayerId = state.outgoingTargetPlayerId
                             ?.takeIf { target -> target !in members },
+                        nicks = state.nicks + payloadNicks,
                         capturingAudio = true,
                         statusMessage = null,
                     )
@@ -420,11 +441,12 @@ class VoiceRuntimeService(
     }
 
     private fun syncTones(phase: VoicePhase, status: String?) {
-        val previous = tonePhase
-        if (previous == phase) {
+        if (phase == tonePhase && status == toneStatus) {
             return
         }
+        val previous = tonePhase
         tonePhase = phase
+        toneStatus = status
         when (phase) {
             VoicePhase.IncomingRinging -> tones.playIncoming()
             VoicePhase.OutgoingRinging -> tones.playRingback()
@@ -434,7 +456,10 @@ class VoiceRuntimeService(
             }
             VoicePhase.Idle -> {
                 val playBusy = !suppressBusy &&
-                    (previous == VoicePhase.OutgoingRinging || isUnavailableStatus(status))
+                    (
+                        previous == VoicePhase.OutgoingRinging ||
+                            (previous == VoicePhase.Idle && isUnavailableStatus(status))
+                        )
                 suppressBusy = false
                 if (playBusy) {
                     tones.playBusy()

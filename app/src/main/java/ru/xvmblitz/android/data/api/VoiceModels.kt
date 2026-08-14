@@ -19,20 +19,28 @@ data class VoiceIceServerDto(
     @SerialName("credential") val credential: String? = null,
 )
 
+data class VoiceNicknameEntry(
+    val playerId: Long = 0L,
+    val nickname: String = "",
+)
+
 data class VoiceIncomingCallPayload(
     val roomId: String = "",
     val fromPlayerId: Long = 0L,
     val inviteExpiresAt: String = "",
+    val fromNickname: String? = null,
 )
 
 data class VoiceCallRejectedPayload(
     val playerId: Long = 0L,
     val reason: String = "",
+    val nickname: String? = null,
 )
 
 data class VoiceCallCanceledPayload(
     val roomId: String = "",
     val playerId: Long = 0L,
+    val nickname: String? = null,
 )
 
 data class VoicePeerJoinedPayload(
@@ -40,6 +48,7 @@ data class VoicePeerJoinedPayload(
     val playerId: Long = 0L,
     val memberIds: List<Long> = emptyList(),
     val endsAt: String? = null,
+    val nicknames: List<VoiceNicknameEntry> = emptyList(),
 )
 
 data class VoicePeerLeftPayload(
