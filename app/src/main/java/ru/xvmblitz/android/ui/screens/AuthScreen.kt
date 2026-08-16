@@ -353,7 +353,7 @@ private fun AuthorizedQuotaContent(
             }
         }
 
-        if (usage != null) {
+        if (usage != null && isFreeTariff(usage)) {
             val remaining = (usage.totalLimit - usage.currentUsage).coerceAtLeast(0)
             val progress = if (usage.totalLimit == 0) {
                 0f
@@ -409,7 +409,7 @@ private fun AuthorizedQuotaContent(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-        } else if (!isUsageLoading) {
+        } else if (usage == null && !isUsageLoading) {
             Text(usageError ?: "Информация об использовании отсутствует")
         }
 
@@ -459,7 +459,8 @@ private fun AuthorizedQuotaContent(
 
 private fun formatAccountType(usage: GetUsageResponseDto?): String {
     return when (usage?.type) {
-        AccessType.Free, AccessType.Trial -> "Тариф: Бесплатный"
+        AccessType.Free -> "Тариф: Бесплатный"
+        AccessType.Trial -> "Тариф: Пробный период"
         AccessType.FullAccess -> "Тариф: Премиум"
         null -> "Тариф: -"
     }
@@ -470,7 +471,7 @@ private fun formatTariffPrice(
     pricing: GetSubscriptionUserPricingResponseDto?,
     publicPricing: GetSubscriptionPublicPricingResponseDto?,
 ): String {
-    if (isFreeOrTrialTariff(usage)) {
+    if (isFreeTariff(usage) || usage?.type == AccessType.Trial) {
         return "0 ${formatSubscriptionCurrency(pricing?.currency ?: publicPricing?.currency ?: "RUB")} / мес"
     }
 
@@ -509,47 +510,57 @@ private fun legacyPriceHint(
     return "Льготная цена действует до ${formatUsageDate(pricing.legacyPriceUntil)}. Затем - ${publicPricing.amount.toInt()} ${formatSubscriptionCurrency(publicPricing.currency)} / мес"
 }
 
-private fun isFreeOrTrialTariff(usage: GetUsageResponseDto?): Boolean =
-    usage?.type == AccessType.Free || usage?.type == AccessType.Trial
+private fun isFreeTariff(usage: GetUsageResponseDto?): Boolean =
+    usage?.type == AccessType.Free
+
+private fun resolvePremiumUntil(usage: GetUsageResponseDto?, pricing: GetSubscriptionUserPricingResponseDto?): String? =
+    usage?.premiumUntil?.takeIf { it.isNotBlank() } ?: pricing?.premiumUntil?.takeIf { it.isNotBlank() }
 
 private fun isPremiumActive(
-    pricing: GetSubscriptionUserPricingResponseDto,
+    pricing: GetSubscriptionUserPricingResponseDto?,
     usage: GetUsageResponseDto?,
 ): Boolean {
-    if (usage?.type != AccessType.FullAccess) {
-        return false
+    val untilRaw = resolvePremiumUntil(usage, pricing)
+    return when (usage?.type) {
+        AccessType.Trial -> untilRaw != null && runCatching {
+            OffsetDateTime.parse(untilRaw).isAfter(OffsetDateTime.now())
+        }.getOrDefault(false)
+        AccessType.FullAccess -> untilRaw.isNullOrBlank() || runCatching {
+            OffsetDateTime.parse(untilRaw).isAfter(OffsetDateTime.now())
+        }.getOrDefault(false)
+        else -> false
     }
-
-    val premiumUntilRaw = pricing.premiumUntil
-    if (premiumUntilRaw.isNullOrBlank()) {
-        return true
-    }
-
-    return runCatching {
-        OffsetDateTime.parse(premiumUntilRaw).isAfter(OffsetDateTime.now())
-    }.getOrDefault(false)
 }
 
 private fun formatSubscriptionStatus(
     pricing: GetSubscriptionUserPricingResponseDto?,
     usage: GetUsageResponseDto?,
 ): String {
-    if (pricing != null && isPremiumActive(pricing, usage)) {
-        return formatPremiumUntil(pricing.premiumUntil)
+    if (usage?.type == AccessType.Trial) {
+        val until = resolvePremiumUntil(usage, pricing)
+        return if (until.isNullOrBlank()) {
+            "Пробный период"
+        } else {
+            "Пробный период до: ${formatUsageDate(until)}"
+        }
     }
 
-    if (isFreeOrTrialTariff(usage) && usage != null) {
+    if (isPremiumActive(pricing, usage)) {
+        return formatPremiumUntil(resolvePremiumUntil(usage, pricing))
+    }
+
+    if (isFreeTariff(usage) && usage != null) {
         return "Квота будет обновлена после ${formatUsageDate(usage.periodEnd)}"
     }
 
-    return formatPremiumUntil(pricing?.premiumUntil)
+    return formatPremiumUntil(resolvePremiumUntil(usage, pricing))
 }
 
 private fun formatPaymentPeriod(
     pricing: GetSubscriptionUserPricingResponseDto?,
     usage: GetUsageResponseDto?,
 ): String {
-    if (isFreeOrTrialTariff(usage)) {
+    if (isFreeTariff(usage) || usage?.type == AccessType.Trial) {
         val periodStart = LocalDate.now()
         val periodEnd = periodStart.plusMonths(1)
         return "Оплачиваемый период: ${formatPeriodRange(periodStart, periodEnd)}"

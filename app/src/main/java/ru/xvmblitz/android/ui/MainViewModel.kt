@@ -131,7 +131,7 @@ class MainViewModel(
         baseState.copy(
             session = session.copy(
                 isSummaryOverlayVisible = baseState.settings.sessionSummaryOverlayVisible,
-                isTrialStatistics = baseState.usage?.type == AccessType.Free || baseState.usage?.type == AccessType.Trial,
+                isTrialStatistics = baseState.usage?.type == AccessType.Free,
             ),
             usageError = extras.error,
             subscriptionError = extras.subscriptionError,

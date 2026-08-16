@@ -122,7 +122,7 @@ class VoiceRuntimeService(
     }
 
     fun setAccessType(type: AccessType?) {
-        setLocalPremium(type == AccessType.FullAccess)
+        setLocalPremium(type == AccessType.FullAccess || type == AccessType.Trial)
         refreshAccount()
     }
 

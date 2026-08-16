@@ -53,6 +53,7 @@ data class GetUsageResponseDto(
     @SerialName("current_usage") val currentUsage: Int,
     @SerialName("period_start") val periodStart: String,
     @SerialName("period_end") val periodEnd: String,
+    @SerialName("premium_until") val premiumUntil: String? = null,
 )
 
 @Serializable
